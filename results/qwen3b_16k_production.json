@@ -1,0 +1,162 @@
+{
+  "model": "Qwen2.5-3B-Instruct",
+  "tokens": 16384,
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 5.451929569244385,
+      "nll_key": 0.018761521205306053,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 16.779955625534058
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0089604889597346,
+      "ppl": 5.742175579071045,
+      "nll_key": 0.023756579185525577,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 22.784844636917114
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 2.2590996123409512,
+      "ppl": 6.362181663513184,
+      "nll_key": 0.027985087285439175,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 21.871530532836914
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.033059488214599,
+      "ppl": 5.828232765197754,
+      "nll_key": 0.01710060363014539,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 25.88075542449951
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.034172475264334,
+      "ppl": 5.499356269836426,
+      "nll_key": 0.01880670307825009,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 27.335368633270264
+    },
+    {
+      "policy": "KIVI k2v2 g32 r128",
+      "bits_per_value": 3.1036870054045895,
+      "ppl": 5.828232765197754,
+      "nll_key": 0.01719921889404456,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 27.858547925949097
+    },
+    {
+      "policy": "GW adattivo min4 cen.5 [UB]",
+      "bits_per_value": 3.099040651275586,
+      "ppl": 5.502361297607422,
+      "nll_key": 0.02052031271159649,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.09099623726474,
+      "true_err": 0.037869439566574355,
+      "sec": 71.42810225486755
+    },
+    {
+      "policy": "GW adattivo cen.8 [UB]",
+      "bits_per_value": 1.6000133359323991,
+      "ppl": 5.618874549865723,
+      "nll_key": 0.020058258747061092,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.325546122673485,
+      "true_err": 0.10658854601327523,
+      "sec": 71.85357713699341
+    },
+    {
+      "policy": "GW-demote budget 5.0",
+      "bits_per_value": 4.931148249106484,
+      "ppl": 5.484355926513672,
+      "nll_key": 0.02047206585605939,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.061914760619402,
+      "true_err": 0.020276100274649607,
+      "sec": 194.58439350128174
+    },
+    {
+      "policy": "GW-demote budget 4.0",
+      "bits_per_value": 3.945661402859741,
+      "ppl": 5.489408493041992,
+      "nll_key": 0.020886255428195,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.129887740231222,
+      "true_err": 0.031942081317456336,
+      "sec": 193.03106570243835
+    },
+    {
+      "policy": "GW-demote budget 3.0",
+      "bits_per_value": 2.9592283342189023,
+      "ppl": 5.452854156494141,
+      "nll_key": 0.02118280033270518,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.212027720279163,
+      "true_err": 0.05278421249927894,
+      "sec": 191.63252782821655
+    },
+    {
+      "policy": "GW-demote budget 2.0",
+      "bits_per_value": 1.9732742063329871,
+      "ppl": 5.689892768859863,
+      "nll_key": 0.021471732606490452,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.327748998585674,
+      "true_err": 0.09241496384411249,
+      "sec": 189.4089276790619
+    },
+    {
+      "policy": "GW-demote budget 1.5",
+      "bits_per_value": 1.4800999417655551,
+      "ppl": 5.842123985290527,
+      "nll_key": 0.023645359401901562,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.485663001736006,
+      "true_err": 0.12447920259980107,
+      "sec": 188.6201376914978
+    }
+  ]
+}

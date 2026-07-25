@@ -1,0 +1,162 @@
+{
+  "model": "Qwen2.5-0.5B-Instruct",
+  "tokens": 16384,
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 7.894231796264648,
+      "nll_key": 0.11463426053524017,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 5.91640043258667
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0089604889597346,
+      "ppl": 7.936451435089111,
+      "nll_key": 0.11663874487082164,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 12.020567655563354
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 2.2590996123409512,
+      "ppl": 8.685887336730957,
+      "nll_key": 0.11865011354287465,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.453941822052002
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.033059488214599,
+      "ppl": 9.487031936645508,
+      "nll_key": 0.23227686186631522,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.79677677154541
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.034172475264334,
+      "ppl": 7.935266971588135,
+      "nll_key": 0.10254533092180888,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.884167909622192
+    },
+    {
+      "policy": "KIVI k2v2 g32 r128",
+      "bits_per_value": 3.1036870054045895,
+      "ppl": 9.487031936645508,
+      "nll_key": 0.23779102663199106,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.858338832855225
+    },
+    {
+      "policy": "GW g64 cen.0",
+      "bits_per_value": 3.9614688494627375,
+      "ppl": 8.687976837158203,
+      "nll_key": 0.11069198201100032,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 13.982648304530553,
+      "true_err": 0.09255407732392823,
+      "sec": 98.00499939918518
+    },
+    {
+      "policy": "GW g16 cen.7",
+      "bits_per_value": 2.3398143045335584,
+      "ppl": 7.796528339385986,
+      "nll_key": 0.11389805128177007,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.163740915911537,
+      "true_err": 0.06813673299910761,
+      "sec": 127.9037070274353
+    },
+    {
+      "policy": "GW g32 cen.7",
+      "bits_per_value": 2.067284438857052,
+      "ppl": 7.771663188934326,
+      "nll_key": 0.11474130054314931,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.15786587411449,
+      "true_err": 0.07178379431232293,
+      "sec": 71.0305826663971
+    },
+    {
+      "policy": "GW g64 cen.7",
+      "bits_per_value": 1.9248958315086724,
+      "ppl": 7.809362888336182,
+      "nll_key": 0.11701122671365738,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.144604167058354,
+      "true_err": 0.07840564666981566,
+      "sec": 39.157557010650635
+    },
+    {
+      "policy": "GW g64 cen.8",
+      "bits_per_value": 1.499308612564477,
+      "ppl": 7.699958801269531,
+      "nll_key": 0.11930164446433385,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.263897208940415,
+      "true_err": 0.09682068108217902,
+      "sec": 37.684000968933105
+    },
+    {
+      "policy": "GW g64 cen.85",
+      "bits_per_value": 1.294894931716882,
+      "ppl": 7.994091510772705,
+      "nll_key": 0.11874478061993916,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.377528766791025,
+      "true_err": 0.1145706571150743,
+      "sec": 36.99646878242493
+    },
+    {
+      "policy": "GW g64 cen.9",
+      "bits_per_value": 1.0375373372421126,
+      "ppl": 8.18505573272705,
+      "nll_key": 0.115859421590964,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.434203841146969,
+      "true_err": 0.13549120473742873,
+      "sec": 36.34852957725525
+    }
+  ]
+}
