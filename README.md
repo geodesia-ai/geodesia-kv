@@ -69,6 +69,26 @@ L'attenzione densa legge 4.2x più VRAM. Il kernel è **numericamente identico**
 percorso PyTorch su tutti e cinque i livelli di precisione (`tests/test_cuda_kernel.py`):
 per costruzione non può degradare la qualità.
 
+### Memoria e velocita' misurate
+
+Attivazioni reali, livelli scelti dall'allocatore vero, byte allocati (non contabilizzati):
+
+| Modello | budget | bit/valore | compressione | ms/token |
+|---|---:|---:|---:|---:|
+| Qwen2.5-3B | 3.0 | 3.20 | **5.00x** | 4.70 |
+| Qwen2.5-3B | 2.0 | 2.31 | **6.92x** | 4.53 |
+| Qwen3.5-0.8B | 3.0 | 3.19 | 5.01x | 1.56 |
+| Qwen3.5-0.8B | 2.0 | 2.50 | 6.39x | 1.42 |
+
+Il costo per token e' il costo per testa misurato, scalato per numero di teste e
+layer: non e' un tok/s end-to-end.
+
+## Paper
+
+`paper/geodesia_kv.pdf` — 7 pagine, con review dello stato dell'arte (28 riferimenti),
+metodo, risultati e risultati negativi. Sei figure generate da dati reali con
+`paper/make_figures.py`.
+
 ## Uso
 
 ```python

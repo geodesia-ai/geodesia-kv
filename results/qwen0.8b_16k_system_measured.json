@@ -1,0 +1,48 @@
+{
+  "model": "Qwen3.5-0.8B",
+  "layers": 6,
+  "kv_heads": 2,
+  "head_dim": 256,
+  "rows": [
+    {
+      "context": 16384,
+      "budget_bits": 3.0,
+      "level_histogram": {
+        "16": 3,
+        "8": 0,
+        "4": 154,
+        "2": 0,
+        "1": 99
+      },
+      "bits_per_value_allocator": 2.9912109375,
+      "cache_GiB_measured": 0.037433624267578125,
+      "cache_GiB_dense_bf16": 0.1875,
+      "compression": 5.008865790278202,
+      "bits_per_value": 3.1943359375,
+      "ms_per_token_geodesia": 1.5639960765838623,
+      "ms_per_token_dense": 2.9622316360473633,
+      "tok_s_geodesia": 639.3877932125231,
+      "tok_s_dense": 337.5833232725663
+    },
+    {
+      "context": 16384,
+      "budget_bits": 2.0,
+      "level_histogram": {
+        "16": 3,
+        "8": 0,
+        "4": 93,
+        "2": 1,
+        "1": 159
+      },
+      "bits_per_value_allocator": 1.9873046875,
+      "cache_GiB_measured": 0.0293426513671875,
+      "cache_GiB_dense_bf16": 0.1875,
+      "compression": 6.390015600624025,
+      "bits_per_value": 2.50390625,
+      "ms_per_token_geodesia": 1.4217942953109741,
+      "ms_per_token_dense": 0.8486956357955933,
+      "tok_s_geodesia": 703.3366242205104,
+      "tok_s_dense": 1178.278711263278
+    }
+  ]
+}

@@ -1,0 +1,162 @@
+{
+  "model": "Qwen2.5-0.5B-Instruct",
+  "tokens": 16384,
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 7.894231796264648,
+      "nll_key": 0.11463426053524017,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 5.099330186843872
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0089604889597346,
+      "ppl": 7.936451435089111,
+      "nll_key": 0.11663874487082164,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.233888149261475
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 2.2590996123409512,
+      "ppl": 8.685887336730957,
+      "nll_key": 0.11865011354287465,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 7.4272541999816895
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.033059488214599,
+      "ppl": 9.487031936645508,
+      "nll_key": 0.23227686186631522,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 7.988520383834839
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.034172475264334,
+      "ppl": 7.935266971588135,
+      "nll_key": 0.10254533092180888,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.020598888397217
+    },
+    {
+      "policy": "KIVI k2v2 g32 r128",
+      "bits_per_value": 3.1036870054045895,
+      "ppl": 9.487031936645508,
+      "nll_key": 0.23779102663199106,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 7.979111909866333
+    },
+    {
+      "policy": "Geodesia-KV adattivo min4 cen.5 [UB]",
+      "bits_per_value": 3.099601486557844,
+      "ppl": 7.790058612823486,
+      "nll_key": 0.11521687855323155,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 13.979415926904906,
+      "true_err": 0.0337524782026665,
+      "sec": 37.620197772979736
+    },
+    {
+      "policy": "Geodesia-KV adattivo cen.8 [UB]",
+      "bits_per_value": 1.499308612564477,
+      "ppl": 7.699958801269531,
+      "nll_key": 0.11930164446433385,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.263897208940415,
+      "true_err": 0.09682068108217902,
+      "sec": 39.71348285675049
+    },
+    {
+      "policy": "Geodesia-KV budget 5.0",
+      "bits_per_value": 4.888305596240817,
+      "ppl": 7.848624229431152,
+      "nll_key": 0.11656066278616588,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.012963820071448,
+      "true_err": 0.025783818016321226,
+      "sec": 64.63554501533508
+    },
+    {
+      "policy": "Geodesia-KV budget 4.0",
+      "bits_per_value": 3.9346810297989783,
+      "ppl": 7.8360595703125,
+      "nll_key": 0.11610094706217448,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.071599902141662,
+      "true_err": 0.039141310534949215,
+      "sec": 65.11663579940796
+    },
+    {
+      "policy": "Geodesia-KV budget 3.0",
+      "bits_per_value": 2.962609384214538,
+      "ppl": 7.753807067871094,
+      "nll_key": 0.11630004147688548,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.134886465611912,
+      "true_err": 0.061167059626577626,
+      "sec": 64.85486769676208
+    },
+    {
+      "policy": "Geodesia-KV budget 2.0",
+      "bits_per_value": 1.9838504590959294,
+      "ppl": 8.114899635314941,
+      "nll_key": 0.11982802053292592,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.371702203438396,
+      "true_err": 0.09721957582440599,
+      "sec": 64.0441358089447
+    },
+    {
+      "policy": "Geodesia-KV budget 1.5",
+      "bits_per_value": 1.4905200721689909,
+      "ppl": 8.800000190734863,
+      "nll_key": 0.12195843458175659,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 336,
+      "cert_bound": 14.637157130099478,
+      "true_err": 0.1207229506858625,
+      "sec": 64.54312586784363
+    }
+  ]
+}
