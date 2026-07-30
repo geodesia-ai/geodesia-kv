@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "geodesia-kv"
 version = "0.1.0"
-description = "Compressione della KV cache ad allocazione certificata: contesti lunghi su GPU piccole con limite d'errore dimostrato"
+description = "Certified allocation KV cache compression: extremely long contexts on small GPUs with proven error bounds"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
