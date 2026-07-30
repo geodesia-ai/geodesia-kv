@@ -1,0 +1,79 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    90369,
+    169602,
+    246823
+  ],
+  "eval_tokens": 64,
+  "eval_mode": "incremental",
+  "certificate_validation": false,
+  "text": "paper/pg19_test.txt",
+  "text_sha256": "42a0b97ff79ec96f53e18ec14bd7704645bd10b7c50125935dbae721e9e8b445",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "bfloat16",
+  "quantization_config": null,
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Geodesia-KV B=4.5 md=0.5 qk=1 qb=0 gate=mass pr=0 tpr=0.03125 sr=0 ss=1 cs=0 tv=2 tk=0",
+      "bits_per_value": 4.985271826259677,
+      "ppl": 24.222318727691658,
+      "read_bits_per_value": 4.985271826259677,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 217728,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 90369,
+          "ppl": 31.542570114135742,
+          "bits_per_value": 4.9896517682415436,
+          "read_bits_per_value": 4.9896517682415436,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 169602,
+          "ppl": 16.910512924194336,
+          "bits_per_value": 4.980828680406714,
+          "read_bits_per_value": 4.980828680406714,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 246823,
+          "ppl": 26.64362335205078,
+          "bits_per_value": 4.9853350301307735,
+          "read_bits_per_value": 4.9853350301307735,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 583.1450936794281,
+      "level_histogram": {
+        "16": 1955,
+        "8": 11534,
+        "4": 43342,
+        "2": 444,
+        "1.5": 0,
+        "1": 16453
+      }
+    }
+  ]
+}

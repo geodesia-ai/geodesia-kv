@@ -15,7 +15,7 @@ Baseline SOTA: StreamingLLM (sink + finestra), SnapKV (top-B per massa osservata
 Quest (selezione per pagina con bound box). Oracolo: Full-KV.
 
 Uso:
-  .venv/bin/python experiment_geodesia_vs_sota.py --tokens 8192
+  .venv/bin/python -m benchmarks.vs_sota --tokens 8192
 """
 
 from __future__ import annotations
@@ -48,6 +48,24 @@ def build_passkey(tok, n_tokens: int, depth: float, key: str):
     return torch.tensor([ids[:cut] + kids + ids[cut:] + qids])
 
 
+def prefill(model, pol, ids):
+    """Prefill esatto; raccoglie la storia causale richiesta dalla policy."""
+    P.ACTIVE = None
+    if pol.name in ("geodesia", "snapkv"):
+        P.OBSERVER = pol
+        model.set_attn_implementation("observe")
+    else:
+        P.OBSERVER = None
+        model.set_attn_implementation("sdpa")
+    # Il prefill serve soltanto a costruire la KV. Chiamare il CausalLM completo
+    # materializza inutilmente logits [B, T, vocab]: su 30B/16k sono diversi GiB
+    # e possono trasformare un modello che entra in VRAM in un falso OOM.
+    decoder = model.get_decoder() if hasattr(model, "get_decoder") else model
+    out = decoder(ids, use_cache=True)
+    P.OBSERVER = None
+    return out
+
+
 @torch.no_grad()
 def run_passkey(model, tok, pol, ids, key_ids, gen: int = 12):
     """Ritorna (testo generato, NLL della chiave vera in teacher forcing).
@@ -58,9 +76,7 @@ def run_passkey(model, tok, pol, ids, key_ids, gen: int = 12):
     indipendentemente dalla forza del modello.
     """
     pol.reset_state()
-    P.ACTIVE = None
-    model.set_attn_implementation("sdpa")
-    out = model(ids[:, :-1].cuda(), use_cache=True)
+    out = prefill(model, pol, ids[:, :-1].cuda())
     base_cache = out.past_key_values
     last = ids[:, -1:].cuda()
     del out
@@ -75,6 +91,11 @@ def run_passkey(model, tok, pol, ids, key_ids, gen: int = 12):
     lp = torch.nn.functional.log_softmax(o.logits.float(), -1)
     nll_key = float(-lp.gather(-1, kt[:, :, None]).mean())
     base_cache.crop(ids.shape[1] - 1)          # rimuove i token forzati
+    # La teacher forcing contiene la risposta vera: lasciare il suo stato nella
+    # policy renderebbe la successiva generazione informata dai token target.
+    # La cache del prompt e' stata ripristinata sopra; anche l'allocatore deve
+    # ripartire dallo stesso stato causale.
+    pol.reset_runtime()
 
     # --- generazione greedy
     cur, got = last, []
@@ -89,28 +110,68 @@ def run_passkey(model, tok, pol, ids, key_ids, gen: int = 12):
 
 
 @torch.no_grad()
-def run_ppl(model, tok, pol, ids, eval_tokens: int = 256) -> float:
+def run_ppl(model, tok, pol, ids, eval_tokens: int = 256,
+            incremental: bool = False, return_token_nll: bool = False):
+    """Perplexity dopo un prefill esatto.
+
+    Il percorso storico invia l'intera continuazione in un solo forward. È
+    causale nei logits, ma per le policy di cache il chunk intero appare come
+    una regione corrente ancora esatta (particolarmente visibile nel residuo
+    KIVI). Con ``incremental=True`` si appende invece un token per volta, come
+    nel decode reale, e si accumula la stessa teacher-forced NLL senza
+    materializzare tutti i logits.
+
+    Con ``return_token_nll=True`` viene restituita anche la NLL di ogni singolo
+    target, nell'ordine dei token. I target dipendono soltanto dalla finestra e
+    non dalla policy, quindi due policy valutate sulla stessa finestra
+    producono liste allineate: è questo che rende possibile un intervallo di
+    confidenza paired invece di un confronto fra sole PPL aggregate.
+    """
     pol.reset_state()
-    P.ACTIVE = None
-    model.set_attn_implementation("sdpa")
     split = ids.shape[1] - eval_tokens
-    out = model(ids[:, :split].cuda(), use_cache=True)
+    if split <= 0 or eval_tokens < 2:
+        raise ValueError("servono un prefisso non vuoto e almeno due token eval")
+    device = next(model.parameters()).device
+    out = prefill(model, pol, ids[:, :split].to(device))
     cache = out.past_key_values
     del out
 
     P.ACTIVE = pol
     model.set_attn_implementation("policy")
-    tgt = ids[:, split:].cuda()
-    o = model(tgt, past_key_values=cache, use_cache=True)
-    P.ACTIVE = None
-    lp = torch.nn.functional.log_softmax(o.logits[:, :-1].float(), -1)
-    nll = -lp.gather(-1, tgt[:, 1:, None]).mean()
-    return float(nll.exp())
+    tgt = ids[:, split:].to(device)
+    try:
+        if not incremental:
+            o = model(tgt, past_key_values=cache, use_cache=True)
+            lp = torch.nn.functional.log_softmax(o.logits[:, :-1].float(), -1)
+            per_token = -lp.gather(-1, tgt[:, 1:, None])[..., 0]
+            ppl = float(per_token.mean().exp())
+            if return_token_nll:
+                return ppl, [float(x) for x in per_token.mean(0)]
+            return ppl
+
+        nll_sum = torch.zeros((), device=device, dtype=torch.float32)
+        n_targets = 0
+        per_token = []
+        for i in range(tgt.shape[1] - 1):
+            o = model(tgt[:, i:i + 1], past_key_values=cache, use_cache=True)
+            cache = o.past_key_values
+            lp = torch.nn.functional.log_softmax(
+                o.logits[:, -1].float(), dim=-1)
+            step = -lp.gather(-1, tgt[:, i + 1:i + 2])
+            nll_sum += step.sum()
+            n_targets += tgt.shape[0]
+            per_token.append(float(step.mean()))
+        ppl = float((nll_sum / n_targets).exp())
+        if return_token_nll:
+            return ppl, per_token
+        return ppl
+    finally:
+        P.ACTIVE = None
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen2.5-3B-Instruct")
+    ap.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct")
     ap.add_argument("--tokens", type=int, default=8192)
     ap.add_argument("--depths", type=float, nargs="*",
                     default=[0.1, 0.35, 0.6, 0.85])
@@ -122,6 +183,7 @@ def main() -> None:
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
     ALL_ATTENTION_FUNCTIONS["policy"] = P.policy_attention
+    ALL_ATTENTION_FUNCTIONS["observe"] = P.observation_attention
 
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(
@@ -160,7 +222,8 @@ def main() -> None:
     key = "8 4 7 2 9 1"
     key_flat = key.replace(" ", "")
     key_ids = torch.tensor([tok(" " + key, add_special_tokens=False).input_ids])
-    ppl_ids = tok(open(args.text).read(), return_tensors="pt").input_ids[:, :T]
+    ppl_ids = tok(open(args.text).read(), return_tensors="pt",
+                  max_length=T, truncation=True).input_ids
 
     results = []
     for label, kw in configs:

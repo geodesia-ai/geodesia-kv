@@ -1,0 +1,83 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "model_revision": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    0
+  ],
+  "eval_tokens": 64,
+  "eval_mode": "incremental",
+  "text": "paper/wikitext2_test.txt",
+  "text_sha256": "bbf94c53a05abe9ee670d3b6343608095822c85e26de37c70b24fc571964574a",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "bfloat16",
+  "quantization_config": null,
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.031155841331967,
+      "ppl": 12.131314277648928,
+      "read_bits_per_value": 5.031155841331967,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 0,
+          "ppl": 12.131314277648926,
+          "bits_per_value": 5.031155841331967,
+          "read_bits_per_value": 5.031155841331967,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 28.31442880630493
+    },
+    {
+      "policy": "Geodesia-KV B=4.875 md=0.25 qk=1 qb=0 gate=mass pr=0 tpr=0.0078125 sr=0 ss=1 cs=0 tv=2 tk=0",
+      "bits_per_value": 4.96475100694768,
+      "ppl": 12.116519927978516,
+      "read_bits_per_value": 4.96475100694768,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 36288,
+      "cert_bound": 16.292589858989025,
+      "true_err": 0.01128463373846341,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 0,
+          "ppl": 12.116519927978516,
+          "bits_per_value": 4.96475100694768,
+          "read_bits_per_value": 4.96475100694768,
+          "true_err": 0.01128463373846341,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 81.77629542350769,
+      "level_histogram": {
+        "16": 344,
+        "8": 4231,
+        "4": 10242,
+        "2": 46,
+        "1.5": 0,
+        "1": 3569
+      }
+    }
+  ]
+}

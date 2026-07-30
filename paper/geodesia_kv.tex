@@ -7,8 +7,13 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
 
-\title{\vspace{-1.2cm}\textbf{Geodesia-KV: Certified Equipotential Precision
-Allocation for KV Cache Compression}}
+\newcommand{\method}{Geodesia-KV}
+\newcommand{\bpv}{bits/value}
+\newcommand{\wikitext}{WikiText-2}
+\newcommand{\pg}{PG-19}
+
+\title{\vspace{-1.2cm}\textbf{Geodesia-KV: Graded and Query-Sparse
+KV-Cache Compression under Causal Evaluation}}
 \author{Vincenzo Dentamaro\\\small Geodesia.ai}
 \date{}
 
@@ -17,539 +22,842 @@ Allocation for KV Cache Compression}}
 
 \begin{abstract}
 \noindent
-Serving long contexts is bounded by the key--value (KV) cache, which grows
-linearly with sequence length and, past a few tens of thousands of tokens,
-exceeds the weights themselves. Existing compressors follow one of two
-strategies: they \emph{evict} tokens, which destroys information irreversibly,
-or they \emph{quantize uniformly}, which collapses at aggressive rates. We
-introduce Geodesia-KV, which does neither. Every block of the context is
-retained, at a precision level allocated by solving a budget-constrained
-optimization whose solution is an \emph{equipotential surface}: at the optimum
-every demoted block carries the same marginal damage per bit. Because the
-original \texttt{bfloat16} values are discarded once compressed, precision can
-only be lost, never regained; we show this constraint is not a limitation but a
-design principle, and that stepwise demotion costs $0.0$--$0.1\%$ relative to
-direct allocation. Each attention output carries a rigorous runtime error
-certificate, mass-weighted in both of its terms; across $6{,}384$ measured
-attention calls we observe zero violations. A fused CUDA kernel dequantizes
-inside the attention loop, so the cache is never materialized densely and the
-memory saving is real rather than notional. On Qwen2.5-3B at a 16k context,
-Geodesia-KV attains perplexity $5.453$ against the uncompressed oracle's
-$5.452$ at $2.96$ bits per value, and strictly Pareto-dominates
-faithful ports of SnapKV, Quest, and KIVI at both $2$ and $4$ bits: against
-KIVI-4bit it uses $41\%$ less memory at better quality. Measured on real
-model activations, the packed cache is $5.00$--$6.92\times$ smaller than
-\texttt{bfloat16}. We additionally report four negative results---Hadamard
-incoherence rotation, block vector quantization, key/value bit asymmetry, and
-fine-grained 2-bit scalar quantization---each of which we measured and
-discarded, and which we document so they are not retried.
+KV-cache compression is usually evaluated along one of two axes: resident
+capacity for quantization and token eviction, or bytes fetched for sparse
+attention. Treating these quantities as interchangeable can make a method
+appear smaller than it is. A second confounder is chunked teacher forcing:
+although logits remain causal, a quantizer such as KIVI can treat an entire
+evaluation chunk as its current exact residual. We present a corrected,
+token-incremental study of \method, a family of training-free cache policies
+that combines monotone blockwise precision allocation, a small exact
+rate--distortion residual, and query-sparse reading using exact page summaries.
+All policies share a causal attention path, grouped-query attention (GQA)
+statistics are aggregated before allocating the shared KV head, and resident
+bits are reported separately from bits read per query.
+
+At 16k context on \wikitext, the approximately five-bit operating point
+improves on a local KIVI-4 port for Qwen2.5-3B
+($6.320$ versus $6.322$ perplexity at $4.96$ versus $5.03$ \bpv) and Qwen3-8B
+($10.540$ versus $10.581$ at $4.99$ versus $5.03$ \bpv). The margins are
+small. On a frozen six-book \pg{} transfer, the same 8B point loses
+($16.258$ versus $16.147$), so it is not a multi-corpus dominance result.
+Conversely, compressed-Quest is slightly worse than Quest on six \wikitext{}
+windows, but on six preregistered \pg{} books it improves perplexity
+($16.931$ versus $17.022$), resident rate ($9.83$ versus $16.25$ \bpv), and
+read rate ($1.95$ versus $2.32$ \bpv). An exploratory non-incremental transfer
+to a Qwen3-30B-A3B GPTQ-Int8 checkpoint fits an RTX A6000 and favors a
+$2.061$-\bpv{} low-rate point, but is not primary evidence.
+
+We additionally validate a packed, head-batched attention kernel in isolation.
+It reduces the represented cache by approximately $6.9\times$ and is faster
+than a local dense \texttt{bmm} reference, but it is not yet integrated into
+Transformers' \texttt{past\_key\_values}; therefore we make no end-to-end
+throughput or peak-VRAM claim. The resulting picture is mixed but actionable:
+the sparse branch transfers across corpora, the five-bit branch does not, and
+the remaining scientific and systems gaps are explicit.
 \end{abstract}
 
 \section{Introduction}
 
-The memory cost of autoregressive inference has shifted. For a 40-layer,
-8-head model with head dimension $128$, the KV cache consumes $160$\,KiB per
-token; at $128$k tokens this is $19.5$\,GiB, larger than the compressed weights
-of the same model. Weight compression, which has absorbed most of the
-community's attention, no longer determines what fits on a given device: the
-cache does.
+Autoregressive attention stores one key and one value for every layer and
+past token. Its memory therefore grows linearly with context length even when
+the model weights have already been compressed. This creates two distinct
+resource problems. First, the \emph{resident cache} must fit in device or host
+memory. Second, decode must \emph{read} enough of that cache for every query.
+Quantization primarily attacks the former; query-sparse methods such as
+Quest~\cite{tang2024quest} primarily attack the latter. Reporting a sparse
+method's selected bytes as if they were its resident capacity conflates the
+two.
 
-Two families dominate current practice, and they fail in complementary ways.
-\emph{Eviction} methods---StreamingLLM, H2O, SnapKV---discard tokens judged
-unimportant. The judgement is made once, from a finite observation window, and
-is irreversible: if a later query needs an evicted token, the information is
-simply gone. \emph{Uniform quantization} methods---KIVI, KVQuant, GEAR---retain
-every token but assign the same precision to all of them, which forces the
-budget to be set by the most demanding block and collapses when pushed to two
-bits.
+Evaluation can introduce a second conflation. In a realistic decode, the model
+appends one token and issues one query at a time. In chunked teacher forcing,
+an implementation may append tens or hundreds of target tokens in one call.
+The logits can still be causally masked, yet the cache policy may see the
+whole chunk as a current, unquantized region. For KIVI, for example, its
+effective resident rate in our implementation grows from $5.03$ \bpv{} for a
+64-token chunk to $5.69$ for a 1024-token chunk. Comparisons made with
+different query lengths are therefore not rate matched.
 
-We began from an information-theoretic question: how much of the cache is
-compressible without loss? Measuring the empirical entropy of real KV tensors
-(Section~\ref{sec:entropy}), we find that lossless compression of a
-\texttt{bfloat16} cache is bounded at $1.40$--$1.50\times$---the sign and
-mantissa fields carry $7.68$--$7.93$ bits of the available $8$. Every reported
-gain beyond that factor, in every method including ours, is lossy. The design
-question is therefore not whether to lose information but \emph{where}.
+This work began as an attempt to allocate a graded precision ladder to the
+entire context. The investigation uncovered and corrected future-query leakage,
+duplicated allocation of GQA-shared KV heads, a missing prefill observer,
+incorrect handling of partial Quest pages, contaminated teacher-forced
+retrieval, and resident/read accounting errors. These corrections materially
+changed the empirical conclusions. Rather than preserve an obsolete claim of
+universal dominance, we report the method that survives, the settings that do
+not transfer, and the missing system integration.
 
-Our answer is that the choice should be made by constrained optimization with a
-checkable guarantee, and that no block should ever be discarded. Geodesia-KV
-assigns each block of $64$ tokens a level on the ladder
-$\{16, 8, 4, 2, \text{centroid}\}$, chosen to minimize the mass-weighted
-reconstruction damage subject to a memory budget. The Lagrangian solution has a
-geometric character that gives the method its name: at the optimum all demoted
-blocks share a single marginal cost $\lambda$, so the allocation is an
-equipotential surface in the space of rate--distortion trade-offs, exactly the
-object that in geodesy defines the reference against which all elevations are
-measured.
+\method{} now denotes three related operating branches:
+
+\begin{enumerate}\itemsep2pt
+\item \textbf{Graded allocation}: every block remains represented on a
+      monotone ladder of exact, scalar-quantized, or centroid states.
+\item \textbf{Graded+RD}: a small exact residual is selected from the prompt by
+      attention mass times squared value-reconstruction error.
+\item \textbf{Compressed-Quest}: exact key boxes rank pages at query time, but
+      the resident K/V pages themselves use the graded representation.
+\end{enumerate}
 
 Our contributions are:
 
 \begin{enumerate}\itemsep2pt
-\item A demonstration that lossless KV compression is capped near $1.5\times$,
-      measured on real activations across layers, which frames all subsequent
-      design choices (Section~\ref{sec:entropy}).
-\item \textbf{Monotone precision demotion}: a compression scheme in which
-      blocks only ever lose precision, requiring no retention of the original
-      values. We measure the cost of stepwise versus direct demotion at
-      $0.0$--$0.1\%$, showing the constraint is essentially free.
-\item \textbf{Lagrangian-optimal allocation} solved by bisection over sorted
-      marginal ratios with a prefix rule, hitting the requested budget to
-      within $0.02$ bits per value.
-\item A \textbf{rigorous runtime error certificate} on the attention output,
-      with both terms mass-weighted; zero violations across $6{,}384$ calls.
-\item A \textbf{fused CUDA kernel} with online softmax and split-K
-      parallelization that dequantizes in-loop, verified numerically identical
-      to the reference across all five precision levels.
-\item \textbf{Four documented negative results} and three causality defects
-      found in our own baseline reimplementations by regression tests we
-      release.
+\item A causal, Q=1 evaluation protocol with explicit separation of resident
+      rate and read rate, model/text revisions, per-window results, and
+      regression tests for query leakage and GQA sharing.
+\item A monotone rate--distortion allocator over a heterogeneous precision
+      ladder, including the exact scale overhead and a prefix constraint on
+      demotion paths.
+\item A target-free exact residual whose saliency combines prompt attention
+      mass with value distortion, and a query-sparse variant that stores exact
+      page boxes while compressing the underlying K/V.
+\item Primary incremental results on 3B and 8B checkpoints, plus a frozen
+      cross-corpus \pg{} test over the exhausted preregistered window list,
+      with paired cluster-bootstrap intervals. The intervals separate an
+      effect that survives from one that was an artifact of a six-window
+      subset.
+\item A numerically checked packed multi-head kernel microbenchmark and a
+      measured account of resident context capacity, including the finding
+      that grouped query attention makes device memory a non-binding
+      constraint on maximum context for these checkpoints.
+\item A record of negative quantum-inspired and conventional variants,
+      including spectral K--V states, cumulant correction, Born-style gating,
+      Hadamard rotation, VQ, static protection, and layer profiles.
 \end{enumerate}
 
 \section{Related Work}
 
-\paragraph{Token eviction.}
-StreamingLLM~\cite{xiao2024streaming} observes that a small set of initial
-``attention sink'' tokens, combined with a sliding window, suffices for stable
-streaming decoding, and discards everything else. H2O~\cite{zhang2023h2o}
-retains ``heavy hitter'' tokens with high accumulated attention alongside
-recent ones. SnapKV~\cite{li2024snapkv} scores prompt tokens using the last
-$64$ queries, applies average pooling with kernel size $5$ to avoid fragmenting
-phrases, and keeps the top-$B$. PyramidKV~\cite{cai2024pyramidkv} and
-PyramidInfer~\cite{yang2024pyramidinfer} allocate non-uniform budgets across
-layers, retaining more in lower layers. CAKE~\cite{qin2025cake} frames eviction
-as a cake-slicing problem, assessing layer preferences from spatial and
-temporal attention dynamics and cascading the budget accordingly.
-Ada-KV~\cite{feng2024adakv} performs the analogous allocation at head
-granularity. All of these share the defining property that discarded
-information cannot be recovered, which we show is the dominant failure mode on
-retrieval-style workloads.
+\paragraph{Eviction and retained-token methods.}
+StreamingLLM~\cite{xiao2024streaming} combines attention sinks with a recent
+window. H2O~\cite{zhang2023h2o} retains heavy hitters. SnapKV~\cite{li2024snapkv}
+uses the final prompt queries to score tokens before generation.
+PyramidKV~\cite{cai2024pyramidkv}, PyramidInfer~\cite{yang2024pyramidinfer},
+CAKE~\cite{qin2025cake}, and Ada-KV~\cite{feng2024adakv} distribute eviction
+budgets across layers or heads. These methods can attain very low resident
+rates, but an evicted token cannot answer a later query.
 
-\paragraph{Query-adaptive selection.}
-Rather than evicting permanently, Quest~\cite{tang2024quest} partitions the
-context into pages, stores element-wise minima and maxima per page, and uses
-them to bound the maximum attention score a page can contribute, fetching only
-the top-$k$ pages per query. InfLLM~\cite{xiao2024infllm} selects
-representative tokens per block and offloads the remainder;
-MInference~\cite{jiang2024minference} classifies heads by sparsity pattern
-before the dot product. RetrievalAttention~\cite{liu2024retrievalattention}
-treats the problem as approximate nearest-neighbour search over the cache.
-InfiniteHiP~\cite{lee2025infinitehip} combines hierarchical pruning with
-LRU-managed offloading, reaching three million tokens on a single 48\,GB GPU.
-Quest's per-page bound is the closest antecedent of our certificate; we adopt
-the same box construction but use it to allocate \emph{precision} rather than
-to select \emph{presence}.
+\paragraph{Query-sparse attention.}
+Quest~\cite{tang2024quest} stores elementwise key minima and maxima for each
+page, bounds the largest possible query--key score, and reads top-ranked
+pages. InfLLM~\cite{xiao2024infllm}, MInference~\cite{jiang2024minference},
+RetrievalAttention~\cite{liu2024retrievalattention}, and
+InfiniteHiP~\cite{lee2025infinitehip} use representative tokens, structured
+sparsity, approximate retrieval, or hierarchical pruning/offload. Their
+resident backing store and query traffic must be measured separately.
 
-\paragraph{Quantization.}
-KIVI~\cite{liu2024kivi} establishes the asymmetric structure now standard:
-keys quantized per channel with groups along the token axis, values per token
-with groups along the channel axis, plus a small residual window kept in full
-precision. KVQuant~\cite{hooper2024kvquant} adds per-channel key quantization
-with pre-RoPE handling and non-uniform datatypes.
-GEAR~\cite{kang2024gear} augments quantization with a low-rank term and a
-sparse outlier correction. These methods retain full coverage but allocate
-precision uniformly; our results show that uniform two-bit quantization
-collapses at small model scales where graded allocation does not.
+\paragraph{KV quantization and merging.}
+KIVI~\cite{liu2024kivi} uses per-channel key quantization along time,
+per-token value quantization along channels, and an exact residual window.
+KVQuant~\cite{hooper2024kvquant} and GEAR~\cite{kang2024gear} add non-uniform
+datatypes, sparse corrections, or low-rank structure. CaM~\cite{zhang2024cam},
+D2O~\cite{wan2024d2o}, and MiniCache~\cite{liu2024minicache} merge tokens or
+exploit cross-layer similarity. \method{} combines scalar quantization and a
+centroid state under one rate constraint, then optionally adds an irregular
+exact residual.
 
-\paragraph{Merging.}
-CaM~\cite{zhang2024cam} merges to-be-evicted value states into retained ones,
-minimizing output perturbation. D2O~\cite{wan2024d2o} merges both keys and
-values using an exponential-moving-average threshold and adapts cache size to
-per-layer attention density. MiniCache~\cite{liu2024minicache} exploits the
-high similarity of KV states across consecutive layers. Our centroid tier is a
-merging operation in this taxonomy, and we position it as such: the
-contribution is not merging per se but its unification with quantization under
-a single certified allocation.
+\paragraph{Architectural and systems alternatives.}
+DeepSeek-V2's latent attention~\cite{deepseek2024v2}, Native Sparse
+Attention~\cite{yuan2025nsa}, Compressive Transformers~\cite{rae2019compressive},
+Infini-attention~\cite{munkhdalai2024infini}, and state-space
+models~\cite{dao2024mamba2} change training or architecture. Our setting is
+training-free and targets frozen Qwen checkpoints~\cite{qwen25,qwen3}.
+FlashAttention~\cite{dao2022flashattention} supplies the online-softmax
+recurrence used by our prototype kernel. GPTQ~\cite{frantar2023gptq} is used
+only for the weights of the exploratory 30B checkpoint; KV-cache rates remain
+independently measured.
 
-\paragraph{Architectural approaches.}
-Multi-head Latent Attention in DeepSeek-V2~\cite{deepseek2024v2} compresses KV
-into a low-rank latent, and NSA~\cite{yuan2025nsa} adds learned sparse
-selection; these require training and therefore cannot be applied to existing
-checkpoints. Compressive Transformer~\cite{rae2019compressive} and
-Infini-attention~\cite{munkhdalai2024infini} maintain compressed memories
-across segments; Mamba-2~\cite{dao2024mamba2} replaces attention with a
-fixed-size recurrent state, trading retrieval fidelity for constant memory. Our
-setting is deliberately training-free: the method must attach to a frozen
-checkpoint.
-
-\paragraph{Systems and kernels.}
-FlashAttention~\cite{dao2022flashattention} and its decoding variant introduce
-the online softmax recurrence that our kernel adopts, together with the split-K
-decomposition required to saturate the device at batch size one.
-QuIP\#~\cite{tseng2024quip} and QuaRot~\cite{ashkboos2024quarot} establish
-incoherence processing via Hadamard rotation for weight quantization; we
-evaluate it here and report that it degrades KV cache quality, for reasons we
-explain in Section~\ref{sec:negative}.
-
-\paragraph{Evaluation.}
-RULER~\cite{hsieh2024ruler} provides synthetic long-context tasks of
-controllable difficulty and is the standard against which retrieval claims
-should be validated; we note in Section~\ref{sec:limits} that our present
-evaluation does not yet include it.
-
-\paragraph{Fundamental limits.}
-Holevo's bound and the Landauer principle imply that a fixed-size state cannot
-losslessly encode unbounded context; Plate's Holographic Reduced
-Representations~\cite{plate1995hrr} quantify the crosstalk of superposition
-memories as growing with $\sqrt{N/d}$. These results motivated our early
-exploration of fixed-size interference memories, which we abandoned on
-measurement (Section~\ref{sec:negative}).
+\paragraph{Long-context evaluation.}
+RULER~\cite{hsieh2024ruler} and LongBench~\cite{bai2023longbench} cover
+retrieval and downstream tasks that perplexity alone cannot establish. We use
+\wikitext{} and \pg{} for controlled language-model loss, and treat the
+absence of RULER/LongBench as a limitation rather than as evidence of memory
+fidelity.
 
 \section{Method}
 
-\subsection{The entropy ceiling}\label{sec:entropy}
+\subsection{Causal policy state and GQA sharing}
 
-We first establish what is achievable losslessly. Capturing the KV cache of
-Qwen2.5-3B over $16{,}384$ tokens of natural text and measuring field-wise
-empirical entropy at five layers, we find $H(\text{exponent})$ between $2.62$
-and $3.35$ bits and $H(\text{sign},\text{mantissa} \mid \text{exponent})$
-between $7.68$ and $7.93$ bits out of $8$. A production entropy coder achieves
-$1.40$--$1.50\times$; the field-wise floor is $1.42$--$1.51\times$. Structural
-predictors fail as well: XOR against the preceding token yields $10.5$--$11.2$
-bits per value, \emph{worse} than raw, and the median relative error of a
-``previous token'' predictor is $0.60$--$1.38$. Any method claiming more than
-$1.5\times$ on a \texttt{bfloat16} cache is lossy, ours included.
+Let a decoder call contain queries $q_0,\ldots,q_{Q-1}$ and a cache prefix of
+length $T$. The representation serving $q_0$ may depend only on the prefix and
+$q_0$; using $q_1,\ldots$ to demote blocks leaks future teacher-forced
+information. \method{} therefore allows only the current query to trigger a
+demotion. Later queries may update statistics only for subsequent calls.
 
-\subsection{Blocks, levels, and monotone demotion}
+During prefill, a separate observer collects causal attention mass from the
+final prompt queries. This initializes both block masses and token saliency.
+For GQA, multiple query heads share one KV head. Their observed masses are
+aggregated first and the physical KV representation is allocated once.
+Allocating separately per query head both invents non-existent storage and can
+demote the same cache repeatedly.
 
-The context is partitioned into blocks of $P = 64$ tokens. Each block occupies
-one level of the ladder $\mathcal{L} = \{16, 8, 4, 2, 1\}$, where $16$ denotes
-raw \texttt{bfloat16}, levels $8/4/2$ denote packed integers with per-group
-scales, and level $1$ denotes the block centroid: a single key and a single
-value vector standing for all $P$ tokens. A block enters at level $16$ and is
-demoted, never promoted.
+\subsection{Precision ladder and exact rate}
 
-This is not a convenience. Once the original values are discarded, higher
-precision cannot be reconstructed; adaptive allocation that revisits its own
-decisions is therefore not merely expensive but \emph{impossible} in a system
-that realizes its memory savings. We verified that the constraint is
-inexpensive: demoting $16 \to 8 \to 4 \to 1$ stepwise incurs $0.0$--$0.1\%$
-additional reconstruction error relative to allocating directly to the final
-level, because requantizing an accurate higher-precision reconstruction is
-nearly indistinguishable from requantizing the original.
+The cache is partitioned into blocks of $P=64$ tokens. A block occupies one
+level
+\[
+\mathcal{L}=\{16,8,4,2,1\},
+\]
+where 16 is exact \texttt{bf16}/\texttt{fp16}, 8/4/2 are packed scalar
+quantizers, and 1 denotes a single centroid K/V pair repeated logically across
+the block. Keys are grouped along time and values along channels, following
+the asymmetry established by KIVI. Each level cost $\beta_b(L)$ includes
+payload, offsets, scales, exact sink/window blocks, and any separate residual.
 
-Reconstruction error accumulates additively across demotions, so a running
-bound $\varepsilon_b$ per block remains valid without reference to the original
-tensor.
+A newly closed block can only be demoted. It is never promoted from its
+reconstruction because the original values would no longer exist in a real
+compressed store. This monotonicity makes the simulated policy implementable
+without silently retaining a dense copy.
 
 \subsection{Equipotential allocation}
 
-Let $m_b$ be the attention mass observed on block $b$, accumulated as an
-exponential moving average over queries, and $e_b(L)$ the reconstruction error
-of block $b$ at level $L$, computable from its per-channel range for integer
-levels and from its centroid radius for level $1$. We solve
+Let $m_b$ be the exponential-moving-average attention mass of block $b$, and
+let $e_b(L)$ be a range/radius proxy for reconstruction error at level $L$.
+The allocator solves
 \begin{equation}
-\min_{\{L_b\}} \sum_b m_b\, e_b(L_b)
-\quad\text{s.t.}\quad \sum_b \beta(L_b) \le B,
-\label{eq:alloc}
+\min_{\{L_b\}}\sum_b m_b^\gamma e_b(L_b)
+\quad\text{s.t.}\quad
+\sum_b\beta_b(L_b)\leq B,
+\label{eq:allocation}
 \end{equation}
-where $\beta(L)$ is the exact bit cost of level $L$ including quantization
-scales, and $B$ the budget. The Lagrangian relaxation
-$\min_L m_b e_b(L) + \lambda\beta(L)$ decouples across blocks; at the optimal
-$\lambda$ every demoted block exhibits the same marginal damage per bit. This
-common value is the equipotential that names the method.
+where $\gamma=1$ in the final configurations. The Lagrangian relaxation
+decouples blocks through
+\[
+m_b^\gamma e_b(L)+\lambda\beta_b(L).
+\]
+Each possible one-step demotion has a marginal damage per saved bit. We sort
+these ratios and find the threshold that reaches the budget. A prefix rule is
+mandatory: reaching level 2 from 16 requires accepting the 16$\rightarrow$8,
+8$\rightarrow$4, and 4$\rightarrow$2 steps for that block. Without this
+constraint an early implementation reported budgets it had not actually
+paid.
 
-We solve~\eqref{eq:alloc} by forming, for each block, the marginal ratio
-$\Delta\text{damage}/\Delta\text{bits}$ of each single-level demotion, sorting
-all such steps, and bisecting on the threshold. A \emph{prefix rule} is
-essential: a block may reach depth $d$ only by traversing all intermediate
-levels, so the accepted steps of a block must form a prefix of its path.
-Omitting this rule causes silent over-compression---a budget of $3.0$ bits
-produced $1.55$ bits in our first implementation. With it, measured
-allocations land within $0.02$ bits per value of the requested budget.
+\subsection{Rate--distortion exact residual}
 
-Two properties of~\eqref{eq:alloc} deserve emphasis. First, distortion is
-convex in bits, so a mean of $4$ bits composed of $2$- and $16$-bit blocks is
-markedly worse than a uniform $4$ bits; a naive greedy that drives the coldest
-block to the floor before touching the next reproduces exactly this pathology.
-Second, the scale overhead is not negligible: at $2$ bits with $16$-token
-groups, the \texttt{fp16} offsets and steps cost as much as the payload,
-doubling the true rate. Both effects are accounted in $\beta(L)$.
-
-\subsection{The error certificate}
-
-Writing $\hat a$ for the attention weights computed from the compressed cache
-and $\hat v$ for reconstructed values, the output error decomposes as
-$o - \hat o = \sum_j \hat a_j (v_j - \hat v_j) + \sum_j (a_j - \hat a_j) v_j$.
-Bounding each term and aggregating per block gives
+Pure block allocation can miss a small number of high-impact tokens. For each
+prompt token $j$, the prefill observer records attention mass $a_j$ and its
+distance from the value centroid of its block. The final residual score is
 \begin{equation}
-\|o - \hat o\| \le \underbrace{\sum_b \hat a_b\, \delta^v_b}_{\text{value error}}
-+ \underbrace{\left(\tfrac{M^+}{M^-} - \tfrac{M^-}{M^+}\right)}_{\|a-\hat a\|_1}
-\max_j \|v_j\|,
-\label{eq:cert}
+s_j=a_j\left\lVert v_j-\bar v_{b(j)}\right\rVert_2^2.
+\label{eq:rdscore}
 \end{equation}
-with $M^\pm = \sum_b \hat a_b e^{\pm\varepsilon_b}$ and $\varepsilon_b$ the
-score-error bound of block $b$. Both terms are weighted by observed attention
-mass rather than by a global worst case; an earlier formulation using the
-global maximum produced bounds two orders of magnitude looser and was
-effectively vacuous. Equation~\eqref{eq:cert} is evaluated in log-space and
-clipped at $2$, since $\|a - \hat a\|_1$ cannot exceed the $\ell_1$ distance
-between probability vectors.
+The highest-scoring prompt tokens are duplicated exactly. This selection is
+target-free at inference: it uses only prompt activations and no continuation
+labels. Its full 16-bit K and V cost is added to the graded base. The
+five-bit points use:
 
-\subsection{Fused CUDA kernel}
+\begin{itemize}\itemsep1pt
+\item Qwen2.5-3B: base $B=4.875$, decay $0.25$, exact fraction
+      $0.78125\%$;
+\item Qwen3-8B: base $B=4.5$, decay $0.5$, exact fraction $3.125\%$.
+\end{itemize}
 
-A cache stored packed but dequantized before attention would materialize
-densely and forfeit the saving. Our kernel therefore dequantizes inside the
-attention loop. One thread block per (batch, KV-head, split) traverses its
-slice of blocks maintaining the online softmax state $(m, \ell, \mathrm{acc})$;
-a second kernel combines partial states using the same recurrence. Split-K is
-not optional: with one thread block per head, a single streaming multiprocessor
-of $128$ was active and the kernel ran $100\times$ slower than dense attention;
-partitioning recovered $54\times$.
+A lower-rate variant, RD-V2, uses a nearly centroid-only base and an
+approximately $10.2\%$ exact residual selected by the same value-distortion
+score. It is included only in non-incremental exploratory tables.
 
-Arithmetic is \texttt{fp32} throughout, with the dequantization formula and
-\texttt{fp16} scale precision matched to the reference implementation, so the
-kernel cannot alter quality. A regression test verifies agreement across all
-five levels simultaneously.
+\subsection{Compressed-Quest}
 
-\section{Experimental Setup}
+Quest's sparse reads do not imply a compressed resident cache: exact K/V pages
+remain resident. Our \texttt{box\_sparse} branch stores, for every closed
+block, exact \texttt{fp16} key minima and maxima computed before quantization.
+For a query $q$, the box upper bound ranks all closed pages. The current
+partial page is always readable; no extra sink/window page is forced outside
+the top-$k$ set. Cold pages receive a hard mask.
 
-We evaluate on Qwen2.5-0.5B-Instruct and Qwen2.5-3B-Instruct at a $16{,}384$
-token context on an RTX~4090 Laptop (16\,GiB). Quality is measured as
-perplexity over the final $256$ tokens given the compressed prefix, on
-WikiText-2 validation text, plus passkey retrieval at three depths ($0.1$,
-$0.5$, $0.9$) and the teacher-forced negative log-likelihood of the true key.
-System measurements use real activations captured from a forward pass and the
-level assignment produced by the actual allocator; no synthetic level
-distributions are used.
+The resident representation is the graded K/V cache plus all exact summaries:
+\begin{equation}
+R_{\mathrm{resident}}
+=R_{\mathrm{graded}}+\sum_b 2D\cdot16\;\text{bits}.
+\end{equation}
+The per-query read cost is all summaries plus the graded K/V of selected and
+current pages:
+\begin{equation}
+R_{\mathrm{read}}(q)
+=R_{\mathrm{boxes}}+
+\sum_{b\in\mathcal{S}(q)\cup\{\mathrm{current}\}}R_b.
+\end{equation}
+The final 8B setting uses base $B=10$, decay $0.5$, and a $12.5\%$ page
+fraction. Exact boxes contribute approximately $0.25$ \bpv{} but avoid ranking
+on quantized summaries.
 
-Baselines are ported from the authors' released source rather than from paper
-descriptions: the official repositories pin \texttt{transformers} 4.33--4.43
-and monkey-patch version-specific model internals, which is incompatible with
-the 5.x release used here. Reading the source proved necessary---our initial
-reimplementation of SnapKV used the wrong pooling kernel size, the wrong
-observation window, a mean instead of a sum, and failed to exclude the recent
-window from ranking.
+\subsection{Attention error certificate}
 
-All policies share a single attention code path, and a regression suite
-enforces causality. It found three genuine information leaks: SnapKV selecting
-retained tokens using \emph{subsequent} queries, and Quest twice---ranking
-future pages before causal masking, and ranking the page containing the current
-query, whose min/max summary is computed over future keys. A fourth defect, an
-oracle that bypassed causal masking entirely, had inflated the uncompressed
-reference and invalidated two earlier result tables.
+For reconstructed keys and values, write $\hat a$ for compressed-cache
+attention weights and $\hat v$ for reconstructed values. The output error
+decomposes as
+\[
+o-\hat o=\sum_j\hat a_j(v_j-\hat v_j)
+          +\sum_j(a_j-\hat a_j)v_j.
+\]
+With a score-error bound $\varepsilon_b$ and value-error bound
+$\delta_b^v$ for block $b$,
+\begin{equation}
+\|o-\hat o\|
+\leq \sum_b\hat a_b\delta_b^v
++\left(\frac{M^+}{M^-}-\frac{M^-}{M^+}\right)
+\max_j\|v_j\|,
+\label{eq:certificate}
+\end{equation}
+where $M^\pm=\sum_b\hat a_b e^{\pm\varepsilon_b}$. The second term is capped by
+the universal $\ell_1$ bound of 2. Validation runs with the dense reference
+enabled produced no observed violations. Hard sparse masking yields a valid
+but generally loose universal bound, so the certificate is currently more
+informative for graded reconstruction than for \texttt{box\_sparse}.
 
-\section{Results and Discussion}
+\subsection{Packed attention prototype}
 
-\subsection{Quality at matched memory}
+The packed prototype dequantizes inside an online-softmax attention loop and
+batches all KV heads of a layer. A separate reduction combines split-context
+partials. Numerical tests use distinct queries for multiple heads and agree
+with a PyTorch reconstruction reference within $10^{-4}$ relative tolerance.
+This is a kernel prototype, not a Transformers cache implementation: quality
+experiments still retain dense K/V to simulate policies, and incremental
+append/demotion is not wired into \texttt{past\_key\_values}.
+
+\section{Experimental Protocol}
+
+\subsection{Models, corpora, and hardware}
+
+Primary experiments use Qwen2.5-3B-Instruct revision
+\texttt{aa8e7253} and Qwen3-8B revision \texttt{b968826d}, both at a 16,384
+token context on one NVIDIA RTX A6000. Activations are \texttt{bfloat16}.
+An exploratory scaling run uses community checkpoint
+\texttt{JunHowie/Qwen3-30B-A3B-GPTQ-Int8} revision
+\texttt{059b0db2} in \texttt{float16}; its weight quantization is separate from
+the KV policy. A Qwen3.5-0.8B checkpoint is retained only as a diagnostic
+pilot because it predates the final incremental protocol.
+
+\wikitext{} validation and test files are pinned by SHA256. For the final
+test file the hash is
+\begin{center}\vspace{-4pt}
+\texttt{bbf94c53a05abe9ee670d3b634360809}\\[-2pt]
+\texttt{5822c85e26de37c70b24fc571964574a}.
+\vspace{-4pt}\end{center}
+The 3B test uses six disjoint offsets from 0 to 81,920. The frozen 8B test uses
+six later offsets from 196,608 to 278,528.
+
+\pg{} is fetched from \texttt{emozilla/pg19} at dataset revision
+\texttt{c021754c8e01c5b1cc83a1f549c1f97fbbb756b8}. Per-book boundaries and
+hashes are stored in manifests. The test text contains 12 books and has SHA256
+\begin{center}\vspace{-4pt}
+\texttt{42a0b97ff79ec96f53e18ec14bd770464}\\[-2pt]
+\texttt{5bd10b7c50125935dbae721e9e8b445}.
+\vspace{-4pt}\end{center}
+Test offsets are the preregistered per-book centers: each window is the 16,384
+token span centered in one book. Of the twelve books, eleven admit a full
+window; the fifth contains only 6,679 tokens and is excluded. We report all
+eleven, so the \pg{} test list is exhausted and no window selection remains
+available. The offsets are 20,668, 90,369, 169,602, 246,823, 320,206, 402,659,
+472,081, 529,495, 584,324, 659,151, and 736,259. An earlier version of this
+work reported the first six of these; Section~\ref{sec:paired} shows why that
+subset was insufficient.
+
+\subsection{Incremental perplexity}
+
+For each window we:
+
+\begin{enumerate}\itemsep1pt
+\item prefill the exact 16k prefix while collecting causal observations;
+\item issue one query for each teacher-forced target token;
+\item append that token to the same policy state;
+\item accumulate the negative log-likelihood of the next token.
+\end{enumerate}
+
+Every primary result uses $Q=1$ and 64 target tokens per window. Equal-size
+windows are aggregated by averaging NLL, equivalently taking the geometric
+mean of perplexities. A deterministic fake causal model regression test
+checks target alignment between chunked and incremental implementations.
+Real \texttt{bf16} full-cache PPL can differ by about $0.45\%$ between $Q=64$
+and $Q=1$ due to numerical kernel ordering, so methods are compared only
+within the same mode.
+
+\subsection{Paired confidence intervals}
+\label{sec:paired}
+
+Aggregate perplexities alone cannot separate a real effect from sample noise,
+and the margins at stake here are fractions of one percent. Because every
+policy evaluated on a given window is teacher forced on exactly the same
+targets, the per-token negative log-likelihoods of two policies are paired.
+Their mean difference is exactly the log ratio of the two perplexities,
+\begin{equation}
+\log\frac{\mathrm{PPL}_a}{\mathrm{PPL}_b}
+  = \frac{1}{N}\sum_{i=1}^{N}\bigl(\ell^{a}_i - \ell^{b}_i\bigr),
+\label{eq:paired}
+\end{equation}
+so a confidence interval on the mean paired difference maps directly onto one
+for the perplexity ratio.
+
+Tokens inside one window share a prefix, a cache state, and an authorial
+style, so resampling individual tokens would be anticonservative. We therefore
+use a cluster bootstrap that resamples whole windows with replacement
+($20{,}000$ draws, percentile interval). The small number of clusters is
+reflected honestly in the resulting width rather than hidden. Runs are
+byte-reproducible: re-executing the eleven-window \pg{} test reproduces the
+previously published six-window aggregates of $16.147$ and $16.258$ exactly.
+
+\subsection{Metrics and baselines}
+
+We report:
+
+\begin{itemize}\itemsep1pt
+\item resident bits per scalar K or V value, including metadata;
+\item bits read per value per query;
+\item teacher-forced perplexity;
+\item attention KL to the dense policy in separate diagnostic runs;
+\item represented cache bytes and attention-only latency for the prototype.
+\end{itemize}
+
+Full-KV, StreamingLLM, SnapKV, Quest, and KIVI are local semantic ports
+implemented on a shared attention path. They are not executions of the
+original version-pinned kernels. Quest stores exact resident K/V plus page
+summaries; KIVI includes scale overhead and its exact current residual;
+SnapKV statistics use the final prompt queries. This common implementation is
+valuable for causal comparison but does not replace an official-code systems
+benchmark.
+
+\section{Results}
+
+\subsection{Primary five-bit comparison}
 
 \begin{table}[t]
 \centering\small
-\caption{Qwen2.5-3B-Instruct, 16k context. Bits per value include quantization
-scales. All four baselines are strictly Pareto-dominated.}
-\label{tab:3b}
-\begin{tabular}{lrrr}
+\caption{Primary Q=1 \wikitext{} comparison, six windows and 64 targets per
+window. Rate includes payload, metadata, and exact residuals.}
+\label{tab:primary}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llrr}
 \toprule
-Method & bits/val & PPL & $\Delta$ \\
+Model & Method & resident/read & PPL \\
 \midrule
-Full-KV (oracle) & 16.00 & 5.452 & --- \\
+3B & KIVI-4 & 5.031/5.031 & 6.3222 \\
+3B & \method{} graded+RD & \textbf{4.961/4.961} & \textbf{6.3195} \\
 \midrule
-Quest $p{=}32$ & 2.26 & 6.362 & $+16.7\%$ \\
-KIVI 2-bit & 3.03 & 5.828 & $+6.90\%$ \\
-SnapKV $b{=}2048$ & 2.01 & 5.742 & $+5.32\%$ \\
-KIVI 4-bit & 5.03 & 5.499 & $+0.86\%$ \\
-\midrule
-\textbf{Geodesia-KV} $B{=}1.5$ & 1.48 & 5.842 & $+7.15\%$ \\
-\textbf{Geodesia-KV} $B{=}2$ & 1.97 & 5.690 & $+4.37\%$ \\
-\textbf{Geodesia-KV} $B{=}3$ & \textbf{2.96} & \textbf{5.453} & $\mathbf{+0.02\%}$ \\
-\textbf{Geodesia-KV} $B{=}4$ & 3.95 & 5.489 & $+0.68\%$ \\
-\textbf{Geodesia-KV} $B{=}5$ & 4.93 & 5.484 & $+0.59\%$ \\
+8B & KIVI-4 & 5.031/5.031 & 10.5807 \\
+8B & \method{} graded+RD & \textbf{4.989/4.989} & \textbf{10.5399} \\
 \bottomrule
 \end{tabular}
+}
 \end{table}
 
-Table~\ref{tab:3b} reports the 3B results. At $2.96$ bits per value the method
-is indistinguishable from the uncompressed oracle ($5.453$ against $5.452$).
-Every baseline is dominated: SnapKV at $2.01$ bits is beaten by our $1.97$-bit
-point on both axes; Quest and KIVI-2bit likewise; and KIVI-4bit, the strongest
-baseline at $5.03$ bits and $+0.86\%$, is beaten by our $2.96$-bit point using
-$41\%$ less memory. Figure~\ref{fig:pareto} plots the frontier.
+Table~\ref{tab:primary} shows small local Pareto improvements. At 3B the PPL
+margin is $0.0026$ ($0.04\%$); at 8B it is $0.0408$ ($0.39\%$). These are not
+large-effect claims. The associated attention-fidelity runs are directionally
+consistent: at 3B KL is $0.00300$ for \method{} and $0.00410$ for KIVI-4; at
+8B it is $0.00243$ and $0.00390$, respectively.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures_geodesia/fig1_pareto_3b.png}
-\caption{Memory--quality frontier, Qwen2.5-3B. The Geodesia-KV curve is
-monotone and converges to the oracle as the budget grows.}
-\label{fig:pareto}
-\end{figure}
+\subsection{Quest and compressed-Quest}
 
-The 0.5B model (Figure~\ref{fig:pareto05}) reproduces the ordering, with one
-instructive difference: KIVI at two bits fails outright, retrieving the passkey
-at $0\%$ with key NLL rising from $0.115$ to $0.232$. We caution against
-reading this as a defect of KIVI, which is validated on 7B models; the
-defensible statement is that at this scale, with head dimension $64$, uniform
-two-bit quantization collapses while graded allocation does not.
+\begin{table*}[t]
+\centering\small
+\caption{Qwen3-8B, Q=1. ``Wins'' counts windows where compressed-Quest has
+lower PPL. \wikitext{} has six 64-target windows; \pg{} has the full eleven.}
+\label{tab:sparse}
+\begin{tabular}{llrrrrr}
+\toprule
+Corpus & Method & resident & read/query & PPL & wins \\
+\midrule
+\wikitext{} & Quest & 16.250 & 2.317 & \textbf{10.238} & 4/6 \\
+\wikitext{} & \method{} compressed-Quest & \textbf{9.854} & \textbf{1.957} & 10.272 & 2/6 \\
+\midrule
+\pg{} & Quest & 16.250 & 2.317 & 16.043 & 3/11 \\
+\pg{} & \method{} compressed-Quest & \textbf{9.836} & \textbf{1.961} & \textbf{15.961} & 8/11 \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures_geodesia/fig2_pareto_05b.png}
-\caption{Memory--quality frontier, Qwen2.5-0.5B. KIVI-2bit fails retrieval
-entirely at this scale.}
-\label{fig:pareto05}
-\end{figure}
+On the full eleven-book \pg{} test compressed-Quest reduces resident rate by
+$39.5\%$ and read rate by $15.4\%$ relative to Quest while also improving
+perplexity. The paired ratio is $1.00516$ with a 95\% interval of
+$[1.00076,\,1.00945]$, which excludes one, and the sign is consistent in eight
+of eleven windows. This is the only comparison in this work whose three-axis
+advantage survives a frozen cross-corpus test with an interval attached.
 
-A methodological caveat applies to the 0.5B results: several compressed
-configurations achieve \emph{lower} perplexity than the oracle. This is a known
-artifact---discarding distant, noisy context aids local prediction---and it
-means perplexity alone is a weak criterion for memory quality. The effect does
-not appear on the 3B model, where the oracle is optimal, which is why we treat
-the 3B numbers as the primary evidence.
+The effect is nonetheless small: the lower bound is $+0.08\%$ of perplexity.
+What distinguishes it from the five-bit case is consistency across windows,
+not magnitude; both margins are below one percent. On \wikitext{} the sparse
+branch wins capacity, traffic, and diagnostic KL ($0.04602$ versus $0.04645$)
+but loses PPL by $0.034$ ($0.34\%$), a cross-over that warns against selecting
+a sparse fraction on one corpus and claiming universal superiority.
 
-\subsection{The certificate holds}
-
-Across both models and all configurations, spanning $6{,}384$ attention calls,
-the bound of Equation~\eqref{eq:cert} was never violated
-(Figure~\ref{fig:cert}). It is conservative: typical bounds exceed the realized
-error by one to two orders of magnitude. We therefore present it as a safety
-guarantee---a value the system can act on when deciding whether to promote a
-block from an offloaded exact copy---rather than as an error estimate.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures_geodesia/fig4_certificate.png}
-\caption{Certified bound against realized error. Every point lies above the
-diagonal; $0$ violations in $6{,}384$ calls.}
-\label{fig:cert}
-\end{figure}
-
-\subsection{Measured memory and kernel cost}
-
-Table~\ref{tab:system} reports measurements on real activations with real
-allocator decisions. At a $3$-bit budget on the 3B model the allocator selects
-$153$ blocks at $4$ bits, $98$ centroids, and $3$ exact blocks, yielding a
-measured $5.00\times$ reduction; at a $2$-bit budget the centroid tier grows to
-$159$ blocks and the reduction reaches $6.92\times$. These are allocated bytes,
-not accounting entries.
+\subsection{Frozen cross-corpus test of the five-bit point}
 
 \begin{table}[t]
 \centering\small
-\caption{Measured cache size and attention cost, real activations, 16k context.
-Per-token cost is the measured per-head cost scaled by head and layer counts.}
-\label{tab:system}
+\caption{Frozen Qwen3-8B transfer to \pg{}, Q=1, and the effect of exhausting
+the preregistered window list. The six-book column is the subset reported
+earlier; the eleven-book column is the full list.}
+\label{tab:pgfive}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lrr}
+\toprule
+ & six books & eleven books \\
+\midrule
+KIVI-4 PPL & \textbf{16.147} & 15.475 \\
+\method{} graded+RD PPL & 16.258 & \textbf{15.490} \\
+resident/read, KIVI-4 & 5.031 & 5.031 \\
+resident/read, \method{} & \textbf{4.989} & \textbf{4.989} \\
+\method{} wins & 2/6 & 5/11 \\
+PPL ratio & --- & $0.99904$ \\
+95\% CI & --- & $[0.99046,\,1.00795]$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+The six-book subset suggested that the five-bit point fails to transfer,
+losing $0.69\%$ of PPL. Exhausting the preregistered list removes that
+conclusion (Table~\ref{tab:pgfive}). Across all eleven books the margin
+shrinks to $0.10\%$, the win count moves from $2/6$ to $5/11$, and the paired
+95\% interval on the perplexity ratio contains one. On $693$ paired targets
+the interval half-width is roughly $0.9\%$, an order of magnitude larger than
+the effect being measured.
+
+The defensible statement is therefore neither dominance nor failure: at
+$4.989$ against $5.031$ \bpv{} the two policies have no measurable perplexity
+difference, so \method{} attains the same quality at lower resident capacity.
+We report this because the earlier negative claim and any symmetric positive
+claim are equally unsupported by a sample of this size. The same caution
+applies to Table~\ref{tab:primary}, whose $0.04\%$ and $0.39\%$ margins have
+not yet been given intervals and are of the same order as the effect that
+dissolved here.
+
+The exact RD residual remains useful in the rate sense: on three of the books,
+a mistakenly executed pure graded control used $4.486$ \bpv{} and scored
+$24.307$, whereas the corrected $3.125\%$ residual used $4.985$ \bpv{} and
+improved to $24.222$. KIVI-4 scored $24.121$ on the same books. The residual
+score in Equation~\ref{eq:rdscore} adds information, but a globally fixed
+base/fraction has not been shown to beat KIVI-4 across corpora.
+
+\subsection{Exploratory low-rate and scaling results}
+
+\begin{table*}[t]
+\centering\small
+\caption{Exploratory \emph{chunked} Q=64 transfer of RD-V2. These rows are
+screening results, not primary Q=1 evidence. The 30B weights are GPTQ-Int8.}
+\label{tab:explore}
 \begin{tabular}{llrrr}
 \toprule
-Model & $B$ & bits/val & compr. & ms/token \\
+Model & Method & resident & read/query & PPL \\
 \midrule
-Qwen2.5-3B & 3.0 & 3.20 & $5.00\times$ & 4.70 \\
-Qwen2.5-3B & 2.0 & 2.31 & $6.92\times$ & 4.53 \\
-Qwen3.5-0.8B & 3.0 & 3.19 & $5.01\times$ & 1.56 \\
-Qwen3.5-0.8B & 2.0 & 2.50 & $6.39\times$ & 1.42 \\
+8B & Full-KV & 16.000 & 16.000 & 10.535 \\
+8B & SnapKV & 2.063 & 2.063 & 10.560 \\
+8B & Quest & 16.250 & 2.313 & \textbf{10.230} \\
+8B & KIVI-4 & 5.043 & 5.043 & 10.539 \\
+8B & \method{} RD-V2 & \textbf{2.061} & \textbf{2.061} & 10.517 \\
+\midrule
+30B-A3B & Full-KV & 16.000 & 16.000 & 6.0008 \\
+30B-A3B & StreamingLLM & 2.004 & 2.004 & 6.0341 \\
+30B-A3B & SnapKV & 2.063 & 2.063 & 5.9900 \\
+30B-A3B & Quest & 16.250 & 2.313 & 6.1513 \\
+30B-A3B & KIVI-2 & 3.051 & 3.051 & 6.2506 \\
+30B-A3B & KIVI-4 & 5.043 & 5.043 & 6.0600 \\
+30B-A3B & \method{} RD-V2 & \textbf{2.061} & \textbf{2.061} & \textbf{5.9413} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The 30B-A3B checkpoint loaded and executed on a 48\,GB RTX A6000, establishing
+feasibility of the requested model scale. RD-V2 is the best row in the
+six-window chunked screen. However, because these JSON files predate the
+\texttt{eval\_mode} field and use Q=64, Table~\ref{tab:explore} must be
+regenerated incrementally before it supports a final scaling claim.
+
+The 0.8B pilot is similarly diagnostic: pure graded points reach PPL $7.443$
+at $1.996$ \bpv{} and $7.335$ at $2.993$ \bpv{}, while KIVI-2 reaches $8.905$
+at $3.033$ and KIVI-4 $7.570$ at $5.034$. Because the run used validation
+text, chunked evaluation, and old Quest accounting, it is excluded from
+primary tables.
+
+\subsection{Attention fidelity}
+
+\begin{table}[t]
+\centering\small
+\caption{Diagnostic attention KL to dense attention. These runs isolate memory
+fidelity; they are distinct from PPL evaluation.}
+\label{tab:kl}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llrr}
+\toprule
+Model & Method & resident & KL \\
+\midrule
+3B & KIVI-4 & 5.086 & 0.00410 \\
+3B & \method{} graded+RD & \textbf{4.990} & \textbf{0.00300} \\
+\midrule
+8B & KIVI-4 & 5.086 & 0.00390 \\
+8B & \method{} graded+RD & \textbf{4.989} & \textbf{0.00243} \\
+\midrule
+8B & Quest & 16.250 & 0.04645 \\
+8B & \method{} compressed-Quest & \textbf{10.238} & \textbf{0.04602} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Perplexity can improve when distant context is removed, acting as
+regularization rather than faithful memory. Table~\ref{tab:kl} partially
+separates these phenomena. It does not replace retrieval evaluation, but it
+prevents a lower PPL from being interpreted automatically as a more accurate
+cache.
+
+\subsection{Packed-kernel microbenchmark}
+
+\begin{table*}[t]
+\centering\small
+\caption{Head-batched attention-only microbenchmark at 16k. Dense is a local
+\texttt{bmm} reference, not FlashAttention or PagedAttention. Times include
+all KV heads of one layer and are multiplied by the number of serial layers.}
+\label{tab:system}
+\begin{tabular}{lrrrrrr}
+\toprule
+Model & packed GiB & dense GiB & compression & packed ms/token & dense ms/token & speedup \\
+\midrule
+Qwen2.5-3B & 0.0815 & 0.5625 & $6.90\times$ & 3.17 & 11.90 & $3.75\times$ \\
+Qwen3-8B & 0.3257 & 2.2500 & $6.91\times$ & 9.93 & 12.44 & $1.25\times$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The represented packed cache is materially smaller, and the fused
+attention-only kernel beats this particular dense reference
+(Table~\ref{tab:system}). The benchmark does not include model projections,
+MLPs, sampling, cache append, allocator execution, or Transformers dispatch.
+The quality runner still keeps dense K/V. Consequently the table is neither
+generation throughput nor measured end-to-end peak VRAM.
+
+\subsection{Resident context capacity}
+\label{sec:capacity}
+
+The preceding tables measure rate. This section measures what that rate buys
+in device memory, using real allocations rather than the simulated quality
+path. We load the model with 4-bit NF4 weights, measure the resident weight
+bytes and the peak activation of a genuine $Q=1$ decode step, and then locate
+the largest allocatable context by bisection. For Full-KV the search executes
+a real decode step at every probe, so its result is a demonstration rather
+than an estimate; for compressed formats we allocate buffers of the computed
+size, which establishes residency but not execution.
+
+One number validates the accounting used throughout this paper. Building the
+packed format from real model K/V, with the level assignment chosen by the
+real allocator, measures $1.959$ \bpv{} where the accounting reports $1.990$.
+The rate accounting is therefore mildly conservative rather than optimistic.
+
+\begin{table}[t]
+\centering\small
+\caption{Maximum single-sequence context with NF4 weights resident. The 16\,GiB
+row is measured by ballasting the device down to that ceiling and repeating
+the real bisection; other rows are projected from the measured weight and
+activation cost. Native windows are 40,960 (8B) and 32,768 (3B); both extend
+to 131,072 with RoPE scaling.}
+\label{tab:capacity}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{Qwen3-8B, 144.0 KiB/token} & \multicolumn{3}{c}{Qwen2.5-3B, 36.0 KiB/token} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+VRAM & Full-KV & KIVI-4 & \method{} 2-bit & Full-KV & KIVI-4 & \method{} 2-bit \\
+\midrule
+16\,GiB & 76.0k & 241.8k & 590.3k & 413.7k & 1.32M & 3.21M \\
+24\,GiB & 134.8k & 428.7k & 1.05M & 648.7k & 2.06M & 5.04M \\
+48\,GiB & 311.1k & 989.2k & 2.41M & 1.35M & 4.30M & 10.51M \\
+64\,GiB & 428.6k & 1.36M & 3.33M & 1.82M & 5.80M & 14.16M \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Table~\ref{tab:capacity} supports a conclusion that is largely negative, and
+we state it rather than the flattering reading. Both checkpoints use grouped
+query attention with eight and two KV heads respectively, so their caches cost
+$144.0$ and $36.0$ KiB per token. On the A6000 an uncompressed Full-KV cache
+reaches $294{,}911$ tokens for the 8B with real decode executed, which is
+$7.2\times$ the model's native window. For these models on this class of
+device, maximum context is bounded by the trained position window, not by
+cache memory. Compression changes the ranking without changing feasibility.
+
+There is one practical exception. At the $131{,}072$ token ceiling reachable
+with RoPE scaling, the 8B needs $23.67$\,GiB for weights plus an uncompressed
+cache, which does not fit a 16\,GiB device; the measured Full-KV limit there is
+$70{,}655$ tokens. The same window costs $7.99$\,GiB with the two-bit branch
+and $11.33$\,GiB with KIVI-4. Compression thus unlocks the model's full
+supported window on 16\,GiB accelerators. For the 3B no such point exists: its
+full window costs $6.42$\,GiB uncompressed, and even a 16\,GiB device holds
+$413.7$k Full-KV tokens, more than three times the reachable ceiling.
+
+Comparing the two model families in Table~\ref{tab:capacity} isolates what
+capacity depends on. Within a model the ratios between methods are fixed by
+rate alone, so \method{} 2-bit exceeds KIVI-4 by $2.44\times$ at both 8B and
+3B; what changes across models is only the absolute scale, through the
+$4\times$ difference in bytes per token induced by two versus eight KV heads.
+Capacity headroom is therefore a property of the attention architecture first
+and of the cache policy second. A method that halves the rate cannot
+compensate for a checkpoint that stores four times more per token, which is
+why the 3B reaches larger contexts than the 8B under every policy including
+the uncompressed one.
+
+\begin{table}[t]
+\centering\small
+\caption{Concurrent Qwen3-8B sequences whose caches fit alongside NF4 weights
+on a 48\,GiB device. KV cache only; a real serving engine adds per-sequence
+activation and scheduler state.}
+\label{tab:concurrency}
+\begin{tabular}{lrr}
+\toprule
+Method & at 40,960 & at 131,072 \\
+\midrule
+Full-KV / Quest & 6 & 2 \\
+Compressed-Quest & 11 & 3 \\
+KIVI-4 & 21 & 6 \\
+\method{} 2-bit & \textbf{53} & \textbf{16} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-In isolation the kernel processes a 16k context in $0.115$\,ms per KV-head
-against $0.060$\,ms for dense \texttt{bfloat16} attention, and $0.248$\,ms
-against $0.153$\,ms at 64k, while reading $4.2$--$4.4\times$ fewer bytes. The
-remaining gap is unpacking arithmetic rather than bandwidth, leaving headroom
-for vectorized loads.
+The axis on which compression is decisive is concurrency
+(Table~\ref{tab:concurrency}), where the two-bit branch admits $8.8\times$ more
+sequences than Full-KV and $2.5\times$ more than KIVI-4 at the native window.
+Unlike the perplexity margins of Tables~\ref{tab:primary}
+and~\ref{tab:pgfive}, these are multiplicative factors, not fractions of one
+percent. Note also that Quest is not competitive on this axis at all: keeping
+exact resident K/V plus page summaries costs slightly \emph{more} than
+uncompressed storage, so its traffic advantage does not translate into
+capacity.
 
-\subsection{Why graded allocation beats uniform quantization}
+Two caveats bound these numbers. The KIVI and Quest per-token costs are
+projected from the rate accounting, since this work implements a resident
+packed format only for \method{}. And allocation feasibility is not usable
+context: beyond the trained window RoPE scaling would be required, which we do
+not evaluate here. Under a tight memory ceiling the projections are optimistic
+by $5$--$7\%$ because ballast fragments the allocator, so they should be used
+with a margin.
 
-Two mechanisms explain the margin. First, quantization noise on scores is
-exponentiated by the softmax: if the score error has variance $\sigma^2$, then
-$\mathbb{E}[e^{s+\epsilon}] = e^{s}e^{\sigma^2/2}$, so coarse quantization
-\emph{inflates} the mass of cold blocks, which then steal weight from hot ones.
-Centroid merging, by Jensen's inequality, errs in the opposite direction,
-deflating blocks whose contribution is negligible---a far more benign failure.
-This asymmetry is why a configuration with $80\%$ of blocks merged at $1.50$
-bits outperformed one with everything quantized at $3.96$ bits.
+\section{Negative Results and Lessons}
+\label{sec:negative}
 
-Second, retrieval and language modelling stress the cache differently.
-Measuring attention mass concentration directly, capturing $99\%$ of the mass
-requires $29$--$47\%$ of blocks even with oracle ordering, and $54$--$85\%$ for
-$99.9\%$. The tail is not negligible; it is merely low-precision-tolerant. This
-is the empirical basis for retaining everything at graded precision rather than
-selecting a subset.
+\paragraph{Chunked evaluation as a false optimization signal.}
+Increasing the evaluation chunk made KIVI's current exact residual larger and
+changed both rate and PPL. Final comparisons therefore moved to Q=1.
 
-\subsection{Negative results}\label{sec:negative}
+\paragraph{Static prompt protection.}
+Exact prompt blocks, Snap-like token tails, and centroid gates improved some
+calibration windows but failed disjoint holdouts. A $2.061$-\bpv{} exact-tail
+hybrid nearly matched SnapKV during development and then lost on holdout.
 
-We report four measured failures.
+\paragraph{Quantum-inspired spectral states.}
+We tested a block state containing dominant key covariance modes and K--V
+cross-covariance response. Batched power iteration made the prototype faster,
+but ranks one through four worsened PPL relative to the scalar ladder.
 
-\textbf{Hadamard incoherence rotation.} Since $q\cdot k = (Hq)\cdot(Hk)$
-exactly, rotation is free in principle and spreads outlier channels. In
-practice it degraded quality by $20\%$ at equal bits and reduced passkey
-retrieval from $100\%$ to $66.7\%$. The explanation is that per-channel
-quantization is \emph{already} the defence against outlier channels; rotation
-distributes outlier energy across all channels, widening every range and
-destroying the structure that per-channel scaling exploits. Rotation pays with
-coarse (per-tensor) scales, not with per-channel ones.
+\paragraph{Cumulant correction.}
+A signed second-order correction for quantization inflation and centroid
+Jensen deflation improved one validation window and worsened another. A
+single global correction does not transfer.
 
-\textbf{Block vector quantization.} Generalizing the centroid to $c$ clusters
-per block wins only below $\approx1.5$ bits per value
-(Figure~\ref{fig:rd}). The premise that tokens with similar keys have similar
-values is false: value reconstruction error remains $0.47$--$0.78$ even at
-$c=32$, because keys and values arise from different projections. Reusing the
-key clustering for values is the conceptual error.
+\paragraph{Born-style projection.}
+Selecting the smallest block subspace containing a target fraction of
+centroid softmax mass improved several validation windows, then failed the
+frozen test. Composing it with RD-V2 was slower and worse than RD-V2 alone.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures_geodesia/fig3_rate_distortion.png}
-\caption{Rate--distortion of block vector quantization against scalar
-quantization, scales included.}
-\label{fig:rd}
-\end{figure}
+\paragraph{Hadamard rotation and key/value asymmetry.}
+Hadamard incoherence processing~\cite{tseng2024quip,ashkboos2024quarot}
+spread key outliers into channels already protected by per-channel scales and
+degraded quality. Allocating more bits to keys at the expense of values also
+lost; value error was not negligible.
 
-\textbf{Key/value bit asymmetry.} Granting keys an extra bit at the values'
-expense degraded perplexity from $8.195$ to $8.445$: the value loss exceeds the
-key gain.
+\paragraph{Vector quantization and fine groups.}
+Multiple centroids help only below approximately $1.5$ \bpv{}. Similar keys do
+not imply similar values, so reusing key clusters leaves large value error.
+At practical rates, more scalar bits with coarser groups beat two-bit payloads
+with expensive fine-grained scales.
 
-\textbf{Fine-grained two-bit quantization.} Two bits with $16$-token groups
-costs $4.00$ bits per value at error $0.056$; four bits with $64$-token groups
-costs $4.50$ at error $0.026$. More bits with coarser groups dominates, because
-distortion falls steeply between two and four bits while scale overhead grows
-linearly.
+\paragraph{Uniform layer profiles.}
+Several six-group layer profiles were tested at matched mean capacity.
+Uniform allocation was better or indistinguishable. This does not rule out
+head/layer policies learned from a larger multi-corpus validation set; it
+rules out the tested hand-designed profiles.
 
-\subsection{Limitations}\label{sec:limits}
+\section{Limitations}
+\label{sec:limitations}
 
-Our evaluation covers two models, one corpus, one context length, and three
-needle depths. RULER and LongBench are not included, and passkey accuracy
-saturates at $100\%$ on the 3B model, so the quality verdict rests largely on
-perplexity---insufficient for a retrieval claim. Baselines are faithful ports
-rather than the original code executing. The kernel is validated in isolation
-and against the reference implementation, but has not been placed inside an
-end-to-end generation loop; consequently we report attention cost per token
-rather than achieved tokens per second, and peak VRAM during generation is
-unmeasured. Finally, the reported per-token costs scale a measured per-head
-cost by the head and layer counts, which assumes linear scaling.
+\textbf{Small evaluation sample.}
+The \pg{} test now uses all eleven preregistered windows and reports paired
+intervals, but $693$ targets still give a 95\% half-width near $0.9\%$ of the
+perplexity ratio, while the effects at stake are $0.1$--$0.7\%$. The
+\wikitext{} tables remain at six windows and have no intervals at all; their
+margins should be read as unresolved rather than established. Because the
+\pg{} list is exhausted, added power must come from further corpora, not from
+further windows of this test.
 
-\section{Conclusions and Future Research}
+\textbf{Local baseline ports.}
+Shared semantics expose causal bugs and allow matched accounting, but original
+baseline releases and optimized kernels must still be executed where
+possible.
 
-We have shown that KV cache compression need not choose between discarding
-information and quantizing it uniformly. Retaining every block at a precision
-chosen by budget-constrained optimization, with demotion restricted to be
-monotone and each output accompanied by a rigorous certificate, dominates
-faithful implementations of SnapKV, Quest, and KIVI at every operating point we
-measured, while making the memory saving real through in-kernel
-dequantization. At three bits per value the method is numerically
-indistinguishable from uncompressed attention on a 3B model.
+\textbf{Incomplete task coverage.}
+No final RULER, LongBench, or multi-key retrieval suite is reported.
+Perplexity and attention KL are insufficient to establish long-term retrieval
+fidelity.
 
-Three directions follow. \emph{Layer- and head-level allocation} remains
-unexploited: our budget is uniform across layers and heads, while CAKE and
-Ada-KV report substantial gains from non-uniform allocation, and the two
-mechanisms are orthogonal. \emph{Promotion from an offloaded exact copy},
-triggered when the certificate exceeds a threshold, would convert the bound
-from a passive guarantee into an active control signal and restore
-bit-exactness where it matters. \emph{Evaluation on RULER and multi-needle
-retrieval} is required before the retrieval claims can be considered
-established; we regard this as the most urgent outstanding work rather than a
-refinement.
+\textbf{No real compressed model cache.}
+Quality runs simulate compressed states while retaining dense K/V. The packed
+kernel is isolated and supports neither real incremental append nor integration
+with \texttt{past\_key\_values}. We therefore do not claim end-to-end speed or
+serving throughput. The capacity results of Section~\ref{sec:capacity} measure
+real allocation and, for Full-KV, real decode, but the concurrency counts are
+cache-only arithmetic rather than a served workload.
 
-We also record the negative results deliberately. Hadamard rotation, vector
-quantization above $1.5$ bits, key/value asymmetry, and fine-grained two-bit
-quantization all seemed principled and all failed under measurement. Reporting
-them costs nothing and saves others the same weeks.
+\textbf{Mixed cross-corpus result.}
+Compressed-Quest transfers on \pg{} with an interval that excludes one, but
+misses \wikitext{} PPL. The five-bit point is statistically undecided against
+KIVI-4 on \pg{}. No current point beats every baseline on every measured axis
+from 3B upward, and on the perplexity axis several comparisons are simply
+below the resolution of the available sample.
 
-\bibliographystyle{plain}
+\textbf{Exploratory 30B protocol.}
+The 30B checkpoint fits and produces favorable chunked results, but Q=1
+incremental replication, official baselines, and system measurements are
+still required.
+
+\section{Conclusion}
+
+\method{} is best understood as a measured family of rate--distortion and
+query-sparse cache policies, not as a completed universal replacement for
+every KV technique. The causal Q=1 protocol establishes small \wikitext{}
+improvements over a local KIVI-4 port at 3B and 8B, which currently lack
+confidence intervals. On the exhausted \pg{} window list the five-bit point is
+statistically undecided against KIVI-4, delivering equal perplexity at lower
+resident capacity; the earlier claim that it fails to transfer was an artifact
+of a six-window subset. In the complementary sparse regime, compressed-Quest
+reduces resident storage and query traffic and improves \pg{} perplexity with
+an interval that excludes one, though it does not improve \wikitext{}
+perplexity.
+
+The capacity measurements reframe what these rates are worth. Because grouped
+query attention has already made the cache small, device memory does not bound
+maximum context for either checkpoint, except when a 16\,GiB accelerator must
+hold the 8B at its RoPE-extended window. Compression instead multiplies
+concurrency, by $8.8\times$ over Full-KV at the native window. That is the
+axis on which the measured advantage is a factor rather than a fraction of a
+percent, and it is where we would direct further work.
+
+The next algorithmic step is not further tuning on these test windows. It is a
+layer/head allocation policy calibrated only on multi-corpus validation and
+then frozen for a larger paired test, sized in advance for the effect it needs
+to resolve. The next systems step is a true packed
+\texttt{past\_key\_values} implementation with append, partial blocks, GQA
+sharing, monotone demotion, and sparse page reads. Only after comparison with
+FlashAttention/PagedAttention and official baseline kernels should
+end-to-end speed and throughput claims be made.
+
 \begin{thebibliography}{99}\small
 \bibitem{xiao2024streaming} G.~Xiao, Y.~Tian, B.~Chen, S.~Han, M.~Lewis.
   Efficient Streaming Language Models with Attention Sinks. \emph{ICLR}, 2024.
-\bibitem{zhang2023h2o} Z.~Zhang et al. H\textsubscript{2}O: Heavy-Hitter Oracle
-  for Efficient Generative Inference of Large Language Models.
+\bibitem{zhang2023h2o} Z.~Zhang et al. H\textsubscript{2}O: Heavy-Hitter
+  Oracle for Efficient Generative Inference of Large Language Models.
   \emph{NeurIPS}, 2023.
 \bibitem{li2024snapkv} Y.~Li et al. SnapKV: LLM Knows What You are Looking for
   Before Generation. \emph{NeurIPS}, 2024.
 \bibitem{cai2024pyramidkv} Z.~Cai et al. PyramidKV: Dynamic KV Cache
-  Compression based on Pyramidal Information Funneling. arXiv:2406.02069, 2024.
+  Compression based on Pyramidal Information Funneling. arXiv:2406.02069,
+  2024.
 \bibitem{yang2024pyramidinfer} D.~Yang et al. PyramidInfer: Pyramid KV Cache
   Compression for High-throughput LLM Inference. \emph{ACL Findings}, 2024.
 \bibitem{qin2025cake} Z.~Qin et al. CAKE: Cascading and Adaptive KV Cache
@@ -578,21 +886,22 @@ them costs nothing and saves others the same weeks.
 \bibitem{kang2024gear} H.~Kang et al. GEAR: An Efficient KV Cache Compression
   Recipe for Near-Lossless Generative Inference of LLM. arXiv:2403.05527, 2024.
 \bibitem{zhang2024cam} Y.~Zhang et al. CaM: Cache Merging for Memory-efficient
-  LLMs Inference. \emph{ICML}, 2024.
+  LLM Inference. \emph{ICML}, 2024.
 \bibitem{wan2024d2o} Z.~Wan et al. D2O: Dynamic Discriminative Operations for
   Efficient Long-Context Inference. arXiv:2406.13035, 2024.
 \bibitem{liu2024minicache} A.~Liu et al. MiniCache: KV Cache Compression in
   Depth Dimension for Large Language Models. \emph{NeurIPS}, 2024.
 \bibitem{deepseek2024v2} DeepSeek-AI. DeepSeek-V2: A Strong, Economical, and
   Efficient Mixture-of-Experts Language Model. arXiv:2405.04434, 2024.
-\bibitem{yuan2025nsa} J.~Yuan et al. Native Sparse Attention: Hardware-Aligned
-  and Natively Trainable Sparse Attention. arXiv:2502.11089, 2025.
-\bibitem{rae2019compressive} J.~Rae, A.~Potapenko, S.~Jayakumar, T.~Lillicrap.
-  Compressive Transformers for Long-Range Sequence Modelling. \emph{ICLR},
-  2020.
+\bibitem{yuan2025nsa} J.~Yuan et al. Native Sparse Attention:
+  Hardware-Aligned and Natively Trainable Sparse Attention. arXiv:2502.11089,
+  2025.
+\bibitem{rae2019compressive} J.~Rae, A.~Potapenko, S.~Jayakumar,
+  T.~Lillicrap. Compressive Transformers for Long-Range Sequence Modelling.
+  \emph{ICLR}, 2020.
 \bibitem{munkhdalai2024infini} T.~Munkhdalai, M.~Faruqui, S.~Gopal. Leave No
-  Context Behind: Efficient Infinite Context Transformers with Infini-attention.
-  arXiv:2404.07143, 2024.
+  Context Behind: Efficient Infinite Context Transformers with
+  Infini-attention. arXiv:2404.07143, 2024.
 \bibitem{dao2024mamba2} T.~Dao, A.~Gu. Transformers are SSMs: Generalized
   Models and Efficient Algorithms Through Structured State Space Duality.
   \emph{ICML}, 2024.
@@ -603,10 +912,15 @@ them costs nothing and saves others the same weeks.
   with Hadamard Incoherence and Lattice Codebooks. \emph{ICML}, 2024.
 \bibitem{ashkboos2024quarot} S.~Ashkboos et al. QuaRot: Outlier-Free 4-Bit
   Inference in Rotated LLMs. \emph{NeurIPS}, 2024.
-\bibitem{hsieh2024ruler} C.~Hsieh et al. RULER: What's the Real Context Size of
-  Your Long-Context Language Models? \emph{COLM}, 2024.
-\bibitem{plate1995hrr} T.~Plate. Holographic Reduced Representations.
-  \emph{IEEE Transactions on Neural Networks}, 6(3), 1995.
+\bibitem{hsieh2024ruler} C.~Hsieh et al. RULER: What's the Real Context Size
+  of Your Long-Context Language Models? \emph{COLM}, 2024.
+\bibitem{bai2023longbench} Y.~Bai et al. LongBench: A Bilingual,
+  Multitask Benchmark for Long Context Understanding. \emph{ACL}, 2024.
+\bibitem{qwen25} Qwen Team. Qwen2.5 Technical Report. arXiv:2412.15115, 2024.
+\bibitem{qwen3} A.~Yang et al. Qwen3 Technical Report. arXiv:2505.09388, 2025.
+\bibitem{frantar2023gptq} E.~Frantar, S.~Ashkboos, T.~Hoefler, D.~Alistarh.
+  GPTQ: Accurate Post-Training Quantization for Generative Pre-trained
+  Transformers. \emph{ICLR}, 2023.
 \end{thebibliography}
 
 \end{document}

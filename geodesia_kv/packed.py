@@ -7,7 +7,7 @@ massimo su una GPU da 16 GiB serve che i tensori occupino davvero quei bit.
 Tre livelli di residenza per blocco, come nella policy:
   esatto     bf16
   quantizzato  interi a 2/4/8 bit impacchettati in uint8 + scale/zero per gruppo
-  centroide  una sola chiave e un solo valore bf16 per blocco (0.5 bit/valore
+  centroide  una sola chiave e un solo valore bf16 per blocco (0.25 bit/valore
              con blocchi da 64)
 
 `nbytes()` riporta l'occupazione reale; `torch.cuda.memory_allocated` la conferma.

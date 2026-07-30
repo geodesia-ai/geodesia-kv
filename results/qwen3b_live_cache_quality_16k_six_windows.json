@@ -1,0 +1,39 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "tokens": 16384,
+  "eval_tokens": 64,
+  "offsets": [
+    0,
+    16384,
+    32768,
+    49152,
+    65536,
+    81920
+  ],
+  "results": {
+    "Full-KV bf16": {
+      "ppl": 6.317399615815697,
+      "resident_bytes": 603942912.0,
+      "bits_per_value": 16.0,
+      "sec": 23.780532360076904
+    },
+    "live 8-bit": {
+      "ppl": 6.334768907490846,
+      "resident_bytes": 325251072.0,
+      "bits_per_value": 8.6167368613807,
+      "sec": 76.26279330253601
+    },
+    "live 4-bit": {
+      "ppl": 6.395738714786672,
+      "resident_bytes": 178974720.0,
+      "bits_per_value": 4.74150033571385,
+      "sec": 129.2779664993286
+    },
+    "live 2-bit": {
+      "ppl": 9.54538382662386,
+      "resident_bytes": 105836544.0,
+      "bits_per_value": 2.803882072880425,
+      "sec": 160.6923508644104
+    }
+  }
+}

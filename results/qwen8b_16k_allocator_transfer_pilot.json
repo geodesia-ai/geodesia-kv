@@ -1,0 +1,119 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.05078125,
+      "ppl": 6.3830885887146,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.560550928115845
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.04296875,
+      "ppl": 6.490501880645752,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.276881456375122
+    },
+    {
+      "policy": "Geodesia-KV B=3 vw=0 mp=1 md=0.25 obs=32",
+      "bits_per_value": 2.992947048611111,
+      "ppl": 6.501221179962158,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 1152,
+      "cert_bound": 31.163175825650494,
+      "true_err": 0.04900929334712285,
+      "sec": 6.808786869049072,
+      "level_histogram": {
+        "16": 1376,
+        "8": 7010,
+        "4": 28327,
+        "2": 1039,
+        "1": 35976
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=3 vw=0 mp=1 md=0.925 obs=32",
+      "bits_per_value": 2.9926622178819446,
+      "ppl": 6.439698219299316,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 1152,
+      "cert_bound": 31.135522371364964,
+      "true_err": 0.04427896134617034,
+      "sec": 6.705013036727905,
+      "level_histogram": {
+        "16": 1271,
+        "8": 6472,
+        "4": 29701,
+        "2": 1142,
+        "1": 35142
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=5 vw=0 mp=1 md=0.25 obs=32",
+      "bits_per_value": 4.992031521267361,
+      "ppl": 6.469021320343018,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 1152,
+      "cert_bound": 31.236100108052295,
+      "true_err": 0.013759529035013726,
+      "sec": 6.680527210235596,
+      "level_histogram": {
+        "16": 2597,
+        "8": 17754,
+        "4": 37873,
+        "2": 572,
+        "1": 14932
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=5 vw=0 mp=1 md=0.925 obs=32",
+      "bits_per_value": 4.991824679904514,
+      "ppl": 6.4571614265441895,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 1152,
+      "cert_bound": 31.222914980310534,
+      "true_err": 0.01200627444243987,
+      "sec": 6.708936452865601,
+      "level_histogram": {
+        "16": 2469,
+        "8": 16820,
+        "4": 40169,
+        "2": 549,
+        "1": 13721
+      }
+    }
+  ]
+}

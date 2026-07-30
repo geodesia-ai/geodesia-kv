@@ -1,0 +1,80 @@
+{
+  "model": "Qwen/Qwen2.5-7B-Instruct-1M",
+  "quantization": "nf4",
+  "vram_cap_gib": 16.0,
+  "gpu": "NVIDIA RTX A6000",
+  "gpu_total_bytes": 50897289216,
+  "weights_bytes": 5559966720,
+  "bits": 4,
+  "chunk": 2048,
+  "window": 128,
+  "prefill_step": 2048,
+  "text": "paper/pg19_test.txt",
+  "attn_implementation": "gqa_causal",
+  "results": [
+    {
+      "policy": "full",
+      "reached": 151552,
+      "oom": "151552 token: CUDA out of memory. Tried to allocate 152.00 MiB. GPU 0 has a total capacity of 47.40 GiB of which 31.03 GiB is free. In",
+      "checkpoints": [
+        {
+          "context": 131072,
+          "retained_tokens": 131072,
+          "resident_bytes": 7516250112,
+          "bits_per_value": 16.0,
+          "peak_bytes": 13723278336,
+          "logit_finite": true,
+          "seconds": 56.26781463623047
+        }
+      ],
+      "seconds": 73.39944338798523
+    },
+    {
+      "policy": "quantized",
+      "reached": 638976,
+      "oom": "638976 token: CUDA out of memory. Tried to allocate 2.00 MiB. GPU 0 has a total capacity of 47.40 GiB of which 30.98 GiB is free. Incl",
+      "checkpoints": [
+        {
+          "context": 131072,
+          "retained_tokens": 131073,
+          "resident_bytes": 2140823552,
+          "bits_per_value": 4.557216207762087,
+          "peak_bytes": 8347950080,
+          "logit_finite": true,
+          "seconds": 62.405149698257446
+        },
+        {
+          "context": 262144,
+          "retained_tokens": 262146,
+          "resident_bytes": 4196089856,
+          "bits_per_value": 4.466152449398427,
+          "peak_bytes": 10419490816,
+          "logit_finite": true,
+          "seconds": 213.13442301750183
+        },
+        {
+          "context": 393216,
+          "retained_tokens": 393219,
+          "resident_bytes": 6251356160,
+          "bits_per_value": 4.435797863277207,
+          "peak_bytes": 12743191552,
+          "logit_finite": true,
+          "seconds": 468.3354308605194
+        },
+        {
+          "context": 524288,
+          "retained_tokens": 524292,
+          "resident_bytes": 8306622464,
+          "bits_per_value": 4.420620570216597,
+          "peak_bytes": 15066882048,
+          "logit_finite": true,
+          "seconds": 830.8551278114319
+        }
+      ],
+      "seconds": 1238.9968116283417
+    }
+  ],
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e"
+}

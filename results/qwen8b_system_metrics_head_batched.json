@@ -1,0 +1,31 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "layers": 36,
+  "kv_heads": 8,
+  "head_dim": 128,
+  "rows": [
+    {
+      "context": 16384,
+      "budget_bits": 2.0,
+      "level_histogram": {
+        "16": 3,
+        "8": 0,
+        "4": 91,
+        "2": 6,
+        "1": 156
+      },
+      "bits_per_value_allocator": 1.998046875,
+      "cache_GiB_measured": 0.32574462890625,
+      "cache_GiB_dense_bf16": 2.25,
+      "compression": 6.90725126475548,
+      "bits_per_value": 2.31640625,
+      "ms_per_layer_geodesia_all_kv_heads": 0.2757757902145386,
+      "ms_per_layer_dense_all_kv_heads": 0.34565478563308716,
+      "ms_per_token_geodesia": 9.927928447723389,
+      "ms_per_token_dense": 12.443572282791138,
+      "tok_s_geodesia": 100.72594753936949,
+      "tok_s_dense": 80.36277503550583,
+      "throughput_scope": "attention-only estimate: measured all KV heads in parallel, multiplied by serial layers"
+    }
+  ]
+}

@@ -1,0 +1,335 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    245760,
+    262144,
+    278528
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_test.txt",
+  "text_sha256": "bbf94c53a05abe9ee670d3b6343608095822c85e26de37c70b24fc571964574a",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "bfloat16",
+  "quantization_config": null,
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 6.640505368436567,
+      "read_bits_per_value": 16.0,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.349994659423828,
+          "bits_per_value": 16.0,
+          "read_bits_per_value": 16.0,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.337987899780273,
+          "bits_per_value": 16.0,
+          "read_bits_per_value": 16.0,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.4607553482055664,
+          "bits_per_value": 16.0,
+          "read_bits_per_value": 16.0,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 10.86984920501709
+    },
+    {
+      "policy": "StreamingLLM b=2048",
+      "bits_per_value": 2.00390625,
+      "ppl": 7.1179930027297384,
+      "read_bits_per_value": 2.00390625,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.363965034484863,
+          "bits_per_value": 2.00390625,
+          "read_bits_per_value": 2.00390625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.740060329437256,
+          "bits_per_value": 2.00390625,
+          "read_bits_per_value": 2.00390625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 4.003810882568359,
+          "bits_per_value": 2.00390625,
+          "read_bits_per_value": 2.00390625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 11.379414081573486
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0625,
+      "ppl": 6.66762193227159,
+      "read_bits_per_value": 2.0625,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.189785957336426,
+          "bits_per_value": 2.0625,
+          "read_bits_per_value": 2.0625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.443691730499268,
+          "bits_per_value": 2.0625,
+          "read_bits_per_value": 2.0625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.4877102375030518,
+          "bits_per_value": 2.0625,
+          "read_bits_per_value": 2.0625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 12.220717191696167
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 16.25,
+      "ppl": 6.344548821525447,
+      "read_bits_per_value": 2.3125,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 12.929967880249023,
+          "bits_per_value": 16.25,
+          "read_bits_per_value": 2.3125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 5.9483418464660645,
+          "bits_per_value": 16.25,
+          "read_bits_per_value": 2.3125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.3205411434173584,
+          "bits_per_value": 16.25,
+          "read_bits_per_value": 2.3125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 12.080034732818604
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.05078125,
+      "ppl": 6.93102776962588,
+      "read_bits_per_value": 3.05078125,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.128410339355469,
+          "bits_per_value": 3.05078125,
+          "read_bits_per_value": 3.05078125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.593614101409912,
+          "bits_per_value": 3.05078125,
+          "read_bits_per_value": 3.05078125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.8464248180389404,
+          "bits_per_value": 3.05078125,
+          "read_bits_per_value": 3.05078125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 12.653359413146973
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.04296875,
+      "ppl": 6.605927971612072,
+      "read_bits_per_value": 5.04296875,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.353500366210938,
+          "bits_per_value": 5.04296875,
+          "read_bits_per_value": 5.04296875,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.320176124572754,
+          "bits_per_value": 5.04296875,
+          "read_bits_per_value": 5.04296875,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.415680170059204,
+          "bits_per_value": 5.04296875,
+          "read_bits_per_value": 5.04296875,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 12.674906253814697
+    },
+    {
+      "policy": "Geodesia-KV B=0.1 md=0.5 qk=0.125 qb=4 gate=token pr=0 tpr=0.102 sr=0 ss=1 cs=0 tv=2 tk=0",
+      "bits_per_value": 2.060546875,
+      "ppl": 6.664724985935577,
+      "read_bits_per_value": 2.060546875,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 3456,
+      "cert_bound": 42.61893009663456,
+      "true_err": 0.147714624215479,
+      "gate_keep_fraction": 0.125,
+      "ppl_windows": [
+        {
+          "offset": 245760,
+          "ppl": 13.24459457397461,
+          "bits_per_value": 2.060546875,
+          "read_bits_per_value": 2.060546875,
+          "true_err": 0.11698916040808803,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.125
+        },
+        {
+          "offset": 262144,
+          "ppl": 6.436470985412598,
+          "bits_per_value": 2.060546875,
+          "read_bits_per_value": 2.060546875,
+          "true_err": 0.19608104900665543,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.125
+        },
+        {
+          "offset": 278528,
+          "ppl": 3.4726436138153076,
+          "bits_per_value": 2.060546875,
+          "read_bits_per_value": 2.060546875,
+          "true_err": 0.1300736632316936,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.125
+        }
+      ],
+      "sec": 22.60938596725464,
+      "level_histogram": {
+        "16": 864,
+        "8": 0,
+        "4": 0,
+        "2": 0,
+        "1.5": 0,
+        "1": 72864
+      }
+    }
+  ]
+}

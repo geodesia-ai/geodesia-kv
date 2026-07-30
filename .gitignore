@@ -6,3 +6,10 @@ build/
 dist/
 *.egg-info/
 .venv/
+paper/wikitext2_valid.txt
+paper/wikitext2_test.txt
+paper/pg19_validation.txt
+paper/pg19_test.txt
+paper/geodesia_kv.aux
+paper/geodesia_kv.log
+paper/geodesia_kv.out

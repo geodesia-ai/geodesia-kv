@@ -1,0 +1,117 @@
+{
+  "policy_a": "KIVI k4v4 g32 r32 [SOTA]",
+  "policy_b": "Geodesia-KV B=4.5 md=0.5 qk=1 qb=0 gate=mass pr=0 tpr=0.03125 sr=0 ss=1 cs=0 tv=2 tk=0",
+  "files": [
+    "results/qwen8b_pg19_16k_kivi4_vs_graded_mix_incremental_eleven_books.json"
+  ],
+  "offsets": [
+    20668,
+    90369,
+    169602,
+    246823,
+    320206,
+    402659,
+    472081,
+    529495,
+    584324,
+    659151,
+    736259
+  ],
+  "n_targets": 693,
+  "n_boot": 20000,
+  "seed": 0,
+  "alpha": 0.05,
+  "ppl_a": 15.474728148557299,
+  "ppl_b": 15.489628015585131,
+  "mean_delta_nll": -0.0009623883731898405,
+  "ci_delta_nll": [
+    -0.009585481073813615,
+    0.007920481520671065
+  ],
+  "ppl_ratio": 0.999038074573977,
+  "ci_ppl_ratio": [
+    0.9904603132130004,
+    1.0079519315126233
+  ],
+  "windows_b_better": 5,
+  "per_window": [
+    {
+      "offset": 20668,
+      "n_targets": 63,
+      "ppl_a": 22.015296918001184,
+      "ppl_b": 21.916500434025163,
+      "mean_delta_nll": 0.0044977285921223
+    },
+    {
+      "offset": 90369,
+      "n_targets": 63,
+      "ppl_a": 31.759853090094936,
+      "ppl_b": 31.54252930984719,
+      "mean_delta_nll": 0.006866238704542556
+    },
+    {
+      "offset": 169602,
+      "n_targets": 63,
+      "ppl_a": 16.64403585640412,
+      "ppl_b": 16.91051476852962,
+      "mean_delta_nll": -0.015883658678152612
+    },
+    {
+      "offset": 246823,
+      "n_targets": 63,
+      "ppl_a": 26.54754583201745,
+      "ppl_b": 26.643617808951237,
+      "mean_delta_nll": -0.0036123323810724763
+    },
+    {
+      "offset": 320206,
+      "n_targets": 63,
+      "ppl_a": 20.089389088367387,
+      "ppl_b": 20.431966281480197,
+      "mean_delta_nll": -0.0169088793866808
+    },
+    {
+      "offset": 402659,
+      "n_targets": 63,
+      "ppl_a": 7.93312888505412,
+      "ppl_b": 8.009467555416439,
+      "mean_delta_nll": -0.009576765502782702
+    },
+    {
+      "offset": 472081,
+      "n_targets": 63,
+      "ppl_a": 16.270296701255564,
+      "ppl_b": 16.030319654895596,
+      "mean_delta_nll": 0.01485924969488729
+    },
+    {
+      "offset": 529495,
+      "n_targets": 63,
+      "ppl_a": 22.0367317398344,
+      "ppl_b": 21.508413307052987,
+      "mean_delta_nll": 0.024266510426337443
+    },
+    {
+      "offset": 584324,
+      "n_targets": 63,
+      "ppl_a": 11.879027728438327,
+      "ppl_b": 11.669360434362158,
+      "mean_delta_nll": 0.017807829001593212
+    },
+    {
+      "offset": 659151,
+      "n_targets": 63,
+      "ppl_a": 8.03537717293996,
+      "ppl_b": 8.112044926282428,
+      "mean_delta_nll": -0.009496045745999297
+    },
+    {
+      "offset": 736259,
+      "n_targets": 63,
+      "ppl_a": 7.231463468676125,
+      "ppl_b": 7.402720580474456,
+      "mean_delta_nll": -0.023406146829883154
+    }
+  ],
+  "verdict": "differenza NON distinguibile dal rumore al 95%: l'intervallo contiene lo zero"
+}

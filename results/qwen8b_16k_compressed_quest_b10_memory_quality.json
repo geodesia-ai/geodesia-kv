@@ -1,0 +1,48 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "tokens": 16384,
+  "depths": [
+    0.0625,
+    0.1875,
+    0.3125,
+    0.4375,
+    0.5625,
+    0.6875,
+    0.8125,
+    0.9375
+  ],
+  "nll_full": {},
+  "nll_void": {},
+  "results": [
+    {
+      "policy": "Quest p=32",
+      "bits_per_value": 16.25,
+      "read_bits_per_value": 2.3125,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.04644811525940895,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 2340.0,
+      "read_MiB_per_query": 333.0,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia B=10",
+      "bits_per_value": 10.23817613389757,
+      "read_bits_per_value": 2.017279770639208,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.04602491110563278,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 1474.29736328125,
+      "read_MiB_per_query": 290.4882869720459,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    }
+  ]
+}

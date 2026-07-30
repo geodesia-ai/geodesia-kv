@@ -1,0 +1,59 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    196608
+  ],
+  "eval_tokens": 64,
+  "eval_mode": "incremental",
+  "certificate_validation": false,
+  "text": "paper/wikitext2_test.txt",
+  "text_sha256": "bbf94c53a05abe9ee670d3b6343608095822c85e26de37c70b24fc571964574a",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "bfloat16",
+  "quantization_config": null,
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Geodesia-KV B=9 md=0.5 qk=0.16 qb=1 gate=box_sparse pr=0 tpr=0 sr=0 ss=1 cs=0 tv=0 tk=0",
+      "bits_per_value": 9.067448183611344,
+      "ppl": 15.857954025268555,
+      "read_bits_per_value": 2.2062443698940766,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 72576,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 0.1607843137254902,
+      "ppl_windows": [
+        {
+          "offset": 196608,
+          "ppl": 15.857954025268555,
+          "bits_per_value": 9.067448183611344,
+          "read_bits_per_value": 2.2062443698940766,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.1607843137254902
+        }
+      ],
+      "sec": 212.91163110733032,
+      "level_histogram": {
+        "16": 8346,
+        "8": 55058,
+        "4": 8629,
+        "2": 56,
+        "1.5": 0,
+        "1": 1639
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "tokens": 16384,
+  "depths": [
+    0.0625,
+    0.1875,
+    0.3125,
+    0.4375,
+    0.5625,
+    0.6875,
+    0.8125,
+    0.9375
+  ],
+  "nll_full": {},
+  "nll_void": {},
+  "results": [
+    {
+      "policy": "KIVI-4",
+      "bits_per_value": 5.0859375,
+      "read_bits_per_value": 5.0859375,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.0041036056354641914,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 183.09375,
+      "read_MiB_per_query": 183.09375,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia B=4.875",
+      "bits_per_value": 4.990058051215278,
+      "read_bits_per_value": 4.990058051215278,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.0029997997917234898,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 179.64208984375,
+      "read_MiB_per_query": 179.64208984375,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B",
+  "model_revision": null,
+  "tokens": 16384,
+  "depths": [
+    0.5
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 7.369682788848877,
+      "nll_key": 0.009446114301681519,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.613201141357422
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0089604889597346,
+      "ppl": 7.484160423278809,
+      "nll_key": 0.009684464894235134,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.58493709564209
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 2.2590996123409512,
+      "ppl": 7.3289666175842285,
+      "nll_key": 0.008903013542294502,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.5354905128479
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.033059488214599,
+      "ppl": 8.904610633850098,
+      "nll_key": 0.02585962414741516,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.834178686141968
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.034172475264334,
+      "ppl": 7.569921970367432,
+      "nll_key": 0.0116658266633749,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.813814878463745
+    },
+    {
+      "policy": "Geodesia-KV budget 3.0",
+      "bits_per_value": 2.9928913454252775,
+      "ppl": 7.334677696228027,
+      "nll_key": 0.009577961638569832,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 48,
+      "cert_bound": 6.178440759579341,
+      "true_err": 0.022128604293053893,
+      "sec": 5.907888650894165
+    },
+    {
+      "policy": "Geodesia-KV budget 2.0",
+      "bits_per_value": 1.9958498787975967,
+      "ppl": 7.443421840667725,
+      "nll_key": 0.009950725361704826,
+      "passkey_acc": 0.0,
+      "cert_violations": 0,
+      "cert_calls": 48,
+      "cert_bound": 6.212847297390302,
+      "true_err": 0.04036515371505326,
+      "sec": 5.814030647277832
+    }
+  ]
+}

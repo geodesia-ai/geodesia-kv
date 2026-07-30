@@ -1,0 +1,66 @@
+{
+  "model": "Qwen/Qwen2.5-7B-Instruct-1M",
+  "quantization": "nf4",
+  "vram_cap_gib": 16.0,
+  "gpu": "NVIDIA RTX A6000",
+  "gpu_total_bytes": 50897289216,
+  "weights_bytes": 5559966720,
+  "bits": 4,
+  "chunk": 2048,
+  "window": 128,
+  "prefill_step": 2048,
+  "text": "paper/pg19_test.txt",
+  "results": [
+    {
+      "policy": "full",
+      "reached": 114688,
+      "oom": "114688 token: CUDA out of memory. Tried to allocate 458.00 MiB. GPU 0 has a total capacity of 47.40 GiB of which 31.16 GiB is free. In",
+      "checkpoints": [
+        {
+          "context": 65536,
+          "resident_bytes": 3758153728,
+          "bits_per_value": 16.0,
+          "peak_bytes": 10744290304,
+          "logit_finite": true,
+          "seconds": 32.8833212852478
+        }
+      ],
+      "seconds": 90.61901783943176
+    },
+    {
+      "policy": "quantized",
+      "reached": 237568,
+      "oom": "237568 token: CUDA out of memory. Tried to allocate 938.00 MiB. GPU 0 has a total capacity of 47.40 GiB of which 31.89 GiB is free. In",
+      "checkpoints": [
+        {
+          "context": 65536,
+          "resident_bytes": 1113219072,
+          "bits_per_value": 4.73942963516792,
+          "peak_bytes": 8233573376,
+          "logit_finite": true,
+          "seconds": 35.18991541862488
+        },
+        {
+          "context": 131072,
+          "resident_bytes": 2140880896,
+          "bits_per_value": 4.557303507942079,
+          "peak_bytes": 11260474368,
+          "logit_finite": true,
+          "seconds": 119.54862332344055
+        },
+        {
+          "context": 196608,
+          "resident_bytes": 3168542720,
+          "bits_per_value": 4.496594798866798,
+          "peak_bytes": 14032982016,
+          "logit_finite": true,
+          "seconds": 251.81718516349792
+        }
+      ],
+      "seconds": 360.21933603286743
+    }
+  ],
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e"
+}

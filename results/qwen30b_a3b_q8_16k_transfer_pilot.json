@@ -1,0 +1,18 @@
+{
+  "model": "/tmp/geodesia-hf-30b/hub/models--JunHowie--Qwen3-30B-A3B-GPTQ-Int8/snapshots/059b0db28cc7f6c52ff91d457fdf8ee87ee7878a",
+  "model_revision": "059b0db28cc7f6c52ff91d457fdf8ee87ee7878a",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    0
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "float16",
+  "quantization_config": 

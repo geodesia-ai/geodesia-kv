@@ -1,0 +1,370 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    131072,
+    147456
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "dtype": "bfloat16",
+  "quantization_config": null,
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 10.007761492111111,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 12.6190824508667,
+          "bits_per_value": 16.0,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.936812400817871,
+          "bits_per_value": 16.0,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 7.30769419670105
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "bits_per_value": 2.0625,
+      "ppl": 10.170240941871498,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 13.767528533935547,
+          "bits_per_value": 2.0625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.512880802154541,
+          "bits_per_value": 2.0625,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 8.068422555923462
+    },
+    {
+      "policy": "Quest p=32  [SOTA]",
+      "bits_per_value": 2.25,
+      "ppl": 9.392073985881652,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 11.279664993286133,
+          "bits_per_value": 2.25,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.820361137390137,
+          "bits_per_value": 2.25,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 7.808171987533569
+    },
+    {
+      "policy": "KIVI k2v2 g32 r32 [SOTA]",
+      "bits_per_value": 3.05078125,
+      "ppl": 9.622040593347467,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 11.997231483459473,
+          "bits_per_value": 3.05078125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.717085838317871,
+          "bits_per_value": 3.05078125,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 8.368355989456177
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.04296875,
+      "ppl": 9.976971737363835,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 12.538514137268066,
+          "bits_per_value": 5.04296875,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.938736915588379,
+          "bits_per_value": 5.04296875,
+          "true_err": 0.0,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 8.381839275360107
+    },
+    {
+      "policy": "Geodesia-KV B=2 md=0.5 qk=0.125 qb=6 gate=centroid pr=0 tpr=0",
+      "bits_per_value": 1.9924774169921875,
+      "ppl": 10.431105394724115,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 2304,
+      "cert_bound": 41.17245632792927,
+      "true_err": 0.3441411099180793,
+      "gate_keep_fraction": 0.12648221343873517,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 13.356359481811523,
+          "bits_per_value": 1.9921196831597223,
+          "true_err": 0.2950063636395094,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.12648221343873517
+        },
+        {
+          "offset": 147456,
+          "ppl": 8.146528244018555,
+          "bits_per_value": 1.9928351508246527,
+          "true_err": 0.3932758561966491,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.12648221343873517
+        }
+      ],
+      "sec": 14.158597946166992,
+      "level_histogram": {
+        "16": 1227,
+        "8": 3916,
+        "4": 17671,
+        "2": 783,
+        "1": 50131
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=2.9 md=0.95 qk=0.2 qb=8 gate=centroid pr=0 tpr=0",
+      "bits_per_value": 2.8918931749131946,
+      "ppl": 10.475025300988138,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 2304,
+      "cert_bound": 40.88705716220041,
+      "true_err": 0.274096365700359,
+      "gate_keep_fraction": 0.2015810276679842,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 13.531567573547363,
+          "bits_per_value": 2.8916524251302085,
+          "true_err": 0.22277212218232811,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.2015810276679842
+        },
+        {
+          "offset": 147456,
+          "ppl": 8.108901977539062,
+          "bits_per_value": 2.8921339246961804,
+          "true_err": 0.3254206092183899,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.2015810276679842
+        }
+      ],
+      "sec": 14.00085973739624,
+      "level_histogram": {
+        "16": 1511,
+        "8": 7026,
+        "4": 26132,
+        "2": 878,
+        "1": 38181
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=2.9 md=0.95 qk=0.2 qb=4 gate=centroid pr=0 tpr=0",
+      "bits_per_value": 2.891903347439236,
+      "ppl": 10.4077156104072,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 2304,
+      "cert_bound": 40.797265701927245,
+      "true_err": 0.26532886907590914,
+      "gate_keep_fraction": 0.2015810276679842,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 13.433868408203125,
+          "bits_per_value": 2.891665988498264,
+          "true_err": 0.21767963842065305,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.2015810276679842
+        },
+        {
+          "offset": 147456,
+          "ppl": 8.06324291229248,
+          "bits_per_value": 2.8921407063802085,
+          "true_err": 0.31297809973116525,
+          "cert_violations": 0,
+          "gate_keep_fraction": 0.2015810276679842
+        }
+      ],
+      "sec": 13.98590898513794,
+      "level_histogram": {
+        "16": 1512,
+        "8": 7028,
+        "4": 26124,
+        "2": 879,
+        "1": 38185
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=5 md=0.95 qk=1 qb=0 gate=mass pr=0 tpr=0",
+      "bits_per_value": 4.992095947265625,
+      "ppl": 10.1311243744546,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 2304,
+      "cert_bound": 37.75325582942201,
+      "true_err": 0.011485330300125503,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 12.901439666748047,
+          "bits_per_value": 4.99235365125868,
+          "true_err": 0.0156662951043782,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.955676555633545,
+          "bits_per_value": 4.99183824327257,
+          "true_err": 0.007304365495872804,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 13.285062313079834,
+      "level_histogram": {
+        "16": 2999,
+        "8": 17011,
+        "4": 37873,
+        "2": 476,
+        "1": 15369
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=5 md=0.25 qk=1 qb=0 gate=mass pr=0 tpr=0",
+      "bits_per_value": 4.992390950520833,
+      "ppl": 10.217038226412031,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 2304,
+      "cert_bound": 37.732288097445334,
+      "true_err": 0.012226728962561594,
+      "gate_keep_fraction": 1.0,
+      "ppl_windows": [
+        {
+          "offset": 131072,
+          "ppl": 13.073379516601562,
+          "bits_per_value": 4.992546929253472,
+          "true_err": 0.016646269266125384,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        },
+        {
+          "offset": 147456,
+          "ppl": 7.984765529632568,
+          "bits_per_value": 4.992234971788195,
+          "true_err": 0.007807188658997803,
+          "cert_violations": 0,
+          "gate_keep_fraction": 1.0
+        }
+      ],
+      "sec": 13.28512716293335,
+      "level_histogram": {
+        "16": 3103,
+        "8": 17552,
+        "4": 36430,
+        "2": 503,
+        "1": 16140
+      }
+    }
+  ]
+}

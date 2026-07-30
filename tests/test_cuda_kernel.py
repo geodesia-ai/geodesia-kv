@@ -77,20 +77,29 @@ def test_kernel_matches_pytorch_reference():
                        torch.tensor(levels, device=dev),
                        torch.full((nb,), P, device=dev), dev)
 
-    q = torch.randn(1, 1, D, device=dev)
+    # Verifica esplicitamente anche il percorso H>1 usato dal benchmark:
+    # livelli/layout sono condivisi, mentre ogni KV-head ha una query distinta.
+    H = 4
+    q = torch.randn(1, H, D, device=dev)
     out = ext.mixed_attn_decode(
-        q.contiguous(), lay["data"].view(1, 1, -1).contiguous(),
-        lay["offs"], lay["klo"].view(1, 1, nb, G, D).contiguous(),
-        lay["kstep"].view(1, 1, nb, G, D).contiguous(),
-        lay["vlo"].view(1, 1, nb, P, gv).contiguous(),
-        lay["vstep"].view(1, 1, nb, P, gv).contiguous(),
+        q.contiguous(),
+        lay["data"].view(1, 1, -1).expand(1, H, -1).contiguous(),
+        lay["offs"],
+        lay["klo"].view(1, 1, nb, G, D).expand(
+            1, H, -1, -1, -1).contiguous(),
+        lay["kstep"].view(1, 1, nb, G, D).expand(
+            1, H, -1, -1, -1).contiguous(),
+        lay["vlo"].view(1, 1, nb, P, gv).expand(
+            1, H, -1, -1, -1).contiguous(),
+        lay["vstep"].view(1, 1, nb, P, gv).expand(
+            1, H, -1, -1, -1).contiguous(),
         lay["level"], lay["valid"], P, group)
 
     kk = torch.cat(krec).view(T, D)
     vv = torch.cat(vrec).view(T, D)
-    ref = torch.softmax(q.view(1, D) @ kk.T, -1) @ vv
+    ref = torch.softmax(q.view(H, D) @ kk.T, -1) @ vv
 
-    diff = (out.view(D) - ref.view(D)).abs().max()
+    diff = (out.view(H, D) - ref.view(H, D)).abs().max()
     rel = diff / ref.abs().max()
     assert rel < 1e-4, f"kernel diverso dal riferimento: {float(rel):.2e}"
 

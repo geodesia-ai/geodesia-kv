@@ -1,0 +1,123 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens": 16384,
+  "depths": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "text_offsets": [
+    0,
+    16384,
+    32768,
+    49152
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Geodesia-KV B=2 vw=0 mp=1 md=0.5 obs=32",
+      "bits_per_value": 1.9925062391493056,
+      "ppl": 7.237720759255455,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 4608,
+      "cert_bound": 31.06790950583915,
+      "true_err": 0.06540087735438584,
+      "ppl_windows": [
+        {
+          "offset": 0,
+          "ppl": 6.633936405181885,
+          "bits_per_value": 1.9927978515625,
+          "true_err": 0.08721909506815943,
+          "cert_violations": 0
+        },
+        {
+          "offset": 16384,
+          "ppl": 5.935347080230713,
+          "bits_per_value": 1.9927029079861112,
+          "true_err": 0.05318762636296823,
+          "cert_violations": 0
+        },
+        {
+          "offset": 32768,
+          "ppl": 8.370203018188477,
+          "bits_per_value": 1.9923773871527777,
+          "true_err": 0.07274533694457357,
+          "cert_violations": 0
+        },
+        {
+          "offset": 49152,
+          "ppl": 8.326334953308105,
+          "bits_per_value": 1.9921468098958333,
+          "true_err": 0.04845145104184212,
+          "cert_violations": 0
+        }
+      ],
+      "sec": 27.173550367355347,
+      "level_histogram": {
+        "16": 1305,
+        "8": 4954,
+        "4": 15390,
+        "2": 717,
+        "1": 51362
+      }
+    },
+    {
+      "policy": "Geodesia-KV B=2 vw=0 mp=1 md=0.95 obs=32",
+      "bits_per_value": 1.992523193359375,
+      "ppl": 7.218855157316806,
+      "nll_key": null,
+      "passkey_acc": null,
+      "cert_violations": 0,
+      "cert_calls": 4608,
+      "cert_bound": 31.099497040888917,
+      "true_err": 0.06586851582472125,
+      "ppl_windows": [
+        {
+          "offset": 0,
+          "ppl": 6.554410457611084,
+          "bits_per_value": 1.9925604926215277,
+          "true_err": 0.08418659981455473,
+          "cert_violations": 0
+        },
+        {
+          "offset": 16384,
+          "ppl": 6.008705139160156,
+          "bits_per_value": 1.9926859537760417,
+          "true_err": 0.05684014317694164,
+          "cert_violations": 0
+        },
+        {
+          "offset": 32768,
+          "ppl": 8.368485450744629,
+          "bits_per_value": 1.9923739963107638,
+          "true_err": 0.07363492747543256,
+          "cert_violations": 0
+        },
+        {
+          "offset": 49152,
+          "ppl": 8.239709854125977,
+          "bits_per_value": 1.9924723307291667,
+          "true_err": 0.048812392831956056,
+          "cert_violations": 0
+        }
+      ],
+      "sec": 26.819031476974487,
+      "level_histogram": {
+        "16": 1346,
+        "8": 4835,
+        "4": 15480,
+        "2": 707,
+        "1": 51360
+      }
+    }
+  ]
+}

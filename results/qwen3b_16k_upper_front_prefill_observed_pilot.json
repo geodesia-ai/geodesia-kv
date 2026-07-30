@@ -1,0 +1,77 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "model_revision": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+  "tokens": 16384,
+  "depths": [
+    0.5
+  ],
+  "eval_tokens": 64,
+  "text": "paper/wikitext2_valid.txt",
+  "text_sha256": "8ef749789ca0693435d20b3f81d5638c19edcebc5a68586dcf09bdf47ef9542f",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e",
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "gpu": "NVIDIA RTX A6000",
+  "results": [
+    {
+      "policy": "Full-KV (oracolo)",
+      "bits_per_value": 16.0,
+      "ppl": 6.751676559448242,
+      "nll_key": 0.020909227430820465,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 4.842529058456421
+    },
+    {
+      "policy": "KIVI k4v4 g32 r32 [SOTA]",
+      "bits_per_value": 5.034172475264334,
+      "ppl": 6.761450290679932,
+      "nll_key": 0.021032733842730522,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 0,
+      "cert_bound": 0.0,
+      "true_err": 0.0,
+      "sec": 8.993311643600464
+    },
+    {
+      "policy": "Geodesia-KV budget 5.0",
+      "bits_per_value": 4.995401330344408,
+      "ppl": 6.7724480628967285,
+      "nll_key": 0.024515774101018906,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.144002477327982,
+      "true_err": 0.009530711640347059,
+      "sec": 17.371342658996582
+    },
+    {
+      "policy": "Geodesia-KV budget 4.0",
+      "bits_per_value": 3.9953269216056775,
+      "ppl": 6.787981033325195,
+      "nll_key": 0.021004265174269676,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.242322702788645,
+      "true_err": 0.016997909542838998,
+      "sec": 17.361969709396362
+    },
+    {
+      "policy": "Geodesia-KV budget 3.0",
+      "bits_per_value": 2.9956989652993276,
+      "ppl": 6.815587997436523,
+      "nll_key": 0.022165272384881973,
+      "passkey_acc": 1.0,
+      "cert_violations": 0,
+      "cert_calls": 576,
+      "cert_bound": 15.32633793147074,
+      "true_err": 0.03338507135993041,
+      "sec": 17.380956172943115
+    }
+  ]
+}

@@ -133,6 +133,54 @@ def blockify(x: torch.Tensor, block: int) -> tuple[torch.Tensor, int]:
     return x.view(nb, block, d), pad
 
 
+def spectral_factors(kb: torch.Tensor, vb: torch.Tensor, rank: int
+                     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Modi principali di un blocco per una rappresentazione ``stato misto``.
+
+    Per ``K = mu_k + X`` e ``V = mu_v + Y`` conserviamo:
+
+    - le direzioni principali ``U`` della covarianza delle key;
+    - le varianze ``lambda`` lungo tali direzioni;
+    - ``W = E[Y (X U)]``, cioè come le value reagiscono a ciascun modo.
+
+    Per una query scalata ``a = q U`` questo approssima simultaneamente il
+    log-partition del blocco e ``E[V | q]``. È una fattorizzazione reale,
+    equivalente alla decomposizione spettrale di uno stato misto; non introduce
+    numeri complessi o una metafora non misurabile.
+    """
+    if kb.ndim != 3 or vb.shape != kb.shape:
+        raise ValueError("spectral_factors richiede K/V (nb, block, D)")
+    nb, p, d = kb.shape
+    rank = min(int(rank), p, d)
+    if rank <= 0:
+        raise ValueError("spectral_rank deve essere positivo")
+    x = kb.float() - kb.float().mean(1, keepdim=True)
+    y = vb.float() - vb.float().mean(1, keepdim=True)
+    # Subspace iteration batched: ci servono pochi autostati dominanti, non una
+    # SVD completa 64xD per ogni blocco. L'inizializzazione usa righe
+    # equispaziate (quindi è già nello span di X); tre passi di potenza su X'X
+    # sono molto più economici e deterministici.
+    seed_idx = torch.linspace(0, p - 1, rank, device=kb.device).long()
+    u = x[:, seed_idx]
+    for _ in range(3):
+        # QR su (D, rank), piccolo; evita che tutti i vettori convergano al
+        # primo autostato.
+        u = torch.linalg.qr(
+            u.transpose(1, 2), mode="reduced").Q.transpose(1, 2)
+        projection = x @ u.transpose(1, 2)
+        u = torch.einsum("npd,npr->nrd", x, projection)
+    u = torch.linalg.qr(
+        u.transpose(1, 2), mode="reduced").Q.transpose(1, 2)
+    projection = x @ u.transpose(1, 2)
+    lam = projection.square().mean(1)
+    w = torch.einsum("npd,npr->nrd", y, projection) / float(p)
+    # Il formato packed previsto è fp16; arrotondare anche nella simulazione
+    # evita di regalare precisione non contabilizzata.
+    return (u.to(torch.float16).float(),
+            w.to(torch.float16).float(),
+            lam.to(torch.float16).float())
+
+
 # --------------------------------------------------------------------------- #
 # policy
 # --------------------------------------------------------------------------- #
@@ -141,23 +189,39 @@ def blockify(x: torch.Tensor, block: int) -> tuple[torch.Tensor, int]:
 class Report:
     """Rendiconto per una singola chiamata di attenzione."""
     resident_bits: float = 0.0     # bit residenti totali per K+V
+    read_bits: float = 0.0         # bit letti dal percorso attention per query/chiamata
     total_values: int = 0          # valori (K+V) del contesto pieno
     cert_bound: float = 0.0        # bound certificato sull'errore relativo
     true_err: float = 0.0          # errore relativo reale (solo per validazione)
     n_certified: int = 0
     n_violations: int = 0
+    gate_candidate_blocks: int = 0  # blocchi chiusi candidati alla lettura
+    gate_selected_blocks: int = 0   # blocchi candidati non penalizzati dal gate
 
     def merge(self, o: "Report") -> None:
         self.resident_bits += o.resident_bits
+        self.read_bits += o.read_bits
         self.total_values += o.total_values
         self.cert_bound += o.cert_bound
         self.true_err += o.true_err
         self.n_certified += o.n_certified
         self.n_violations += o.n_violations
+        self.gate_candidate_blocks += o.gate_candidate_blocks
+        self.gate_selected_blocks += o.gate_selected_blocks
 
     @property
     def bits_per_value(self) -> float:
         return self.resident_bits / max(self.total_values, 1)
+
+    @property
+    def read_bits_per_value(self) -> float:
+        return self.read_bits / max(self.total_values, 1)
+
+    @property
+    def gate_keep_fraction(self) -> float:
+        if not self.gate_candidate_blocks:
+            return 1.0
+        return self.gate_selected_blocks / self.gate_candidate_blocks
 
 
 @dataclass
@@ -182,6 +246,20 @@ class Policy:
     debias: bool = False             # rimuove il bias log-normale della quantizzazione
     freeze: bool = False             # decisione per blocco presa UNA volta e congelata
     budget_bits: float = 0.0         # bit/valore target (attiva la demozione)
+    layer_budget_bits: tuple = ()    # target opzionale per layer, stesso budget totale medio
+    alloc_value_weight: float = 0.0  # peso del danno V nell'allocatore
+    alloc_mass_power: float = 1.0    # 1 = danno atteso; >1 privilegia i blocchi hot
+    mass_decay: float = 0.9          # peso della storia rispetto alla query corrente
+    query_keep_frac: float = 1.0     # quota di blocchi vecchi non penalizzata per query
+    query_cold_bias: float = 0.0     # bias logit finito sui blocchi non selezionati
+    query_gate: str = "mass"         # mass|centroid|hybrid|box|box_sparse|born|protected|token
+    protected_frac: float = 0.0      # quota prompt congelata esatta dalla massa prefill
+    token_protected_frac: float = 0.0  # quota token prompt duplicata esatta (contata)
+    spectral_rank: int = 0           # modi K/V aggiunti al livello centroide terminale
+    spectral_strength: float = 1.0   # damping causale della correzione momentale
+    cumulant_strength: float = 0.0   # correzione log-partition da varianza firmata
+    token_value_power: float = 0.0   # peso RD del residuo V nella selezione esatta
+    token_key_power: float = 0.0     # peso RD del residuo K nella selezione esatta
     retire_after: int = 512          # token dopo i quali un blocco e' "ritirato"
     state: dict = field(default_factory=dict)   # (layer, head) -> decisioni
     snap_window: int = 64            # SnapKV ufficiale: window_size
@@ -190,6 +268,7 @@ class Policy:
     kivi_v_bits: int = 2             # KIVI ufficiale: v_bits
     kivi_group: int = 32             # KIVI ufficiale: group_size
     kivi_residual: int = 32          # KIVI ufficiale: residual_length
+    observations: dict = field(default_factory=dict)  # statistiche del prefill esatto
     report: Report = field(default_factory=Report)
 
     def reset_state(self) -> None:
@@ -199,6 +278,38 @@ class Policy:
         prompt successivo e la misura e' priva di senso.
         """
         self.state.clear()
+        self.observations.clear()
+
+    def reset_runtime(self) -> None:
+        """Azzera la cache compressa conservando le osservazioni del prompt.
+
+        Serve quando due continuazioni indipendenti (teacher forcing e
+        generazione) partono dallo stesso prefill: nessuna puo' ereditare le
+        decisioni prese guardando i token dell'altra.
+        """
+        self.state.clear()
+
+    def _budget_for(self, hid) -> float:
+        """Budget locale del layer, oppure il target uniforme.
+
+        Un profilo esplicito permette di spendere gli stessi bit totali dove la
+        loss del modello è più sensibile. La scelta è statica/offline: non usa
+        query o target della sequenza valutata e resta implementabile nella
+        cache packed.
+        """
+        if not self.layer_budget_bits:
+            return self.budget_bits
+        if hid is None:
+            raise ValueError("layer_budget_bits richiede un identificatore hid")
+        layer = int(hid[0])
+        if not 0 <= layer < len(self.layer_budget_bits):
+            raise ValueError(
+                f"layer {layer} fuori dal profilo di "
+                f"{len(self.layer_budget_bits)} layer")
+        budget = float(self.layer_budget_bits[layer])
+        if budget <= 0:
+            raise ValueError("ogni budget per layer deve essere positivo")
+        return budget
 
     # ---------------------------------------------------------------- helpers
     def _observed_mass(self, q_obs: torch.Tensor, k: torch.Tensor,
@@ -215,6 +326,55 @@ class Policy:
         if pad:
             w = torch.nn.functional.pad(w, (0, pad))
         return w.view(w.shape[0], nb, self.block).sum(-1).mean(0)   # (nb,)
+
+    def _prompt_token_keep(self, score: torch.Tensor, prompt_t: int,
+                           total_t: int, fraction: float,
+                           value_residual: torch.Tensor | None = None,
+                           key_residual: torch.Tensor | None = None
+                           ) -> torch.Tensor:
+        """Selezione token causale SnapKV, opzionalmente rate--distortion.
+
+        `score` è raccolto sulle ultime query del prompt. La capacità include la
+        finestra recente, che resta sempre selezionata; il resto viene scelto
+        dopo avg-pooling. I residui misurano il danno di sostituire K/V col
+        centroide e sono disponibili dal prompt, senza target futuri:
+
+        ``saliency = mass * value_residual^alpha * key_residual^beta``.
+
+        Con alpha=beta=0 la regola è esattamente SnapKV.
+        """
+        if not 0.0 <= fraction <= 1.0:
+            raise ValueError("la frazione token deve essere in [0, 1]")
+        dev = score.device
+        keep = torch.zeros(total_t, dtype=torch.bool, device=dev)
+        prompt_t = min(prompt_t, int(score.numel()), total_t)
+        w = min(self.snap_window, prompt_t)
+        tail = prompt_t - w
+        capacity = min(prompt_t, max(w, int(
+            fraction * prompt_t + 0.999999)))
+        n_rank = min(tail, max(0, capacity - w))
+        if n_rank:
+            rank_score = score[:tail].float()
+            for feature, power in (
+                    (value_residual, self.token_value_power),
+                    (key_residual, self.token_key_power)):
+                if power == 0.0:
+                    continue
+                if feature is None or int(feature.numel()) < tail:
+                    raise ValueError(
+                        "feature K/V mancante per la saliency token")
+                f = feature[:tail].float().clamp_min(1e-8)
+                # La normalizzazione non cambia il ranking ma mantiene numeri
+                # confrontabili tra layer/head e previene overflow.
+                f = f / f.mean().clamp_min(1e-8)
+                rank_score = rank_score * f.pow(power)
+            pooled = torch.nn.functional.avg_pool1d(
+                rank_score[None, None], kernel_size=self.snap_kernel,
+                stride=1, padding=self.snap_kernel // 2)[0, 0]
+            keep[pooled.topk(n_rank).indices] = True
+        keep[tail:prompt_t] = True
+        keep[prompt_t:total_t] = True
+        return keep
 
     # ------------------------------------------------------------------ apply
     def _frozen_alloc(self, hid, nb: int, mass: torch.Tensor, rng: torch.Tensor,
@@ -277,7 +437,9 @@ class Policy:
         return bits, cent
 
     def attend(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
-               scaling: float, q_offset: int = 0, hid=None) -> torch.Tensor:
+               scaling: float, q_offset: int = 0, hid=None,
+               allow_demote: bool = True,
+               observed_mass: torch.Tensor | None = None) -> torch.Tensor:
         """q (Q,D), k/v (T,D) di UNA testa. Ritorna (Q,D) e aggiorna il report.
 
         `q_offset` e' la posizione assoluta della prima query: la query i puo'
@@ -293,7 +455,9 @@ class Policy:
         causal = kpos[None, :] <= qpos[:, None]          # (Q, T)
 
         if self.name in ("full", "fullpath"):
-            rep.resident_bits += 2 * T * D * 16
+            cache_bits = 2 * T * D * 16
+            rep.resident_bits += cache_bits
+            rep.read_bits += cache_bits
             s = ((q @ k.T) * scaling).masked_fill(~causal, float("-inf"))
             return torch.softmax(s, -1) @ v
 
@@ -313,11 +477,22 @@ class Policy:
                 #   - avg_pool1d con kernel_size=5, padding=2, stride=1
                 #   - si tengono `max_capacity_prompt - window_size` indici
                 w = self.snap_window
-                q_obs = q[: w]
-                sc = ((q_obs @ k.T) * scaling).masked_fill(
-                    ~causal[: w], float("-inf"))
-                score = torch.softmax(sc.float(), -1).sum(0)
-                tail = max(T - w, 0)
+                prior = self.observations.get(hid, {}).get("token_score")
+                if prior is not None:
+                    # Score ufficiale osservato sulle ultime query del PROMPT,
+                    # prima della continuazione valutata.
+                    prompt_t = min(int(prior.numel()), q_offset)
+                    score = prior[:prompt_t]
+                    tail = max(prompt_t - w, 0)
+                else:
+                    # Fallback causale per chiamate unitarie: mai usare q[1:].
+                    q_obs = q[:1]
+                    sc = ((q_obs @ k.T) * scaling).masked_fill(
+                        ~causal[:1], float("-inf"))
+                    score = torch.softmax(sc.float(), -1).sum(0)
+                    prompt_t = q_offset + 1
+                    score = score[:prompt_t]
+                    tail = max(prompt_t - w, 0)
                 score = score[:tail]
                 score = torch.nn.functional.avg_pool1d(
                     score[None, None], kernel_size=self.snap_kernel, stride=1,
@@ -325,15 +500,20 @@ class Policy:
                 n_keep = max(0, min(self.budget_tokens - w, tail))
                 keep = (score.topk(n_keep).indices if n_keep > 0
                         else torch.zeros(0, dtype=torch.long, device=k.device))
-                keep = torch.cat([keep, torch.arange(tail, T, device=k.device)
-                                  ]).unique()
+                keep = torch.cat([
+                    keep,
+                    torch.arange(tail, prompt_t, device=k.device),
+                    torch.arange(q_offset, T, device=k.device),
+                ]).unique()
             # I token del chunk corrente sono quelli "appena generati": nel
             # deployment reale vengono APPESI alla cache e mai evitti. Senza
             # questo, una query a meta' chunk perde il proprio contesto immediato
             # e il metodo statico crolla per un artefatto del protocollo.
             keep = torch.cat([keep, torch.arange(q_offset, T, device=k.device)]).unique()
             kk, vv = k[keep], v[keep]
-            rep.resident_bits += 2 * len(keep) * D * 16
+            cache_bits = 2 * len(keep) * D * 16
+            rep.resident_bits += cache_bits
+            rep.read_bits += cache_bits
             s = ((q @ kk.T) * scaling).masked_fill(
                 keep[None, :] > qpos[:, None], float("-inf"))
             return torch.softmax(s, -1) @ vv
@@ -364,7 +544,19 @@ class Policy:
             full = mask.repeat_interleave(self.block, 1)[:, :T] & causal
             s = (q @ k.T) * scaling
             s = s.masked_fill(~full, float("-inf"))
-            rep.resident_bits += 2 * npages * self.block * D * 16 + nb * 2 * D * 16
+            # Quest non comprime/evitta la cache: conserva tutta la KV esatta e
+            # aggiunge min/max per pagina. Il suo vantaggio è il traffico letto
+            # per query, NON la capacità residente. Mescolare i due assi faceva
+            # apparire Quest come una cache da 2.25 bit/valore.
+            summary_bits = nb * 2 * D * 16
+            rep.resident_bits += 2 * T * D * 16 + summary_bits
+            # `mask` include sia le pagine top-k gia' chiuse sia la pagina
+            # corrente, che Quest deve leggere esattamente ma non puo'
+            # classificare con un summary contenente token futuri. Il vecchio
+            # contatore ometteva questa pagina e sottostimava il traffico.
+            pages_read = float(mask.sum(-1).float().mean())
+            rep.read_bits += (
+                2 * pages_read * self.block * D * 16 + summary_bits)
             return torch.softmax(s, -1) @ v
 
         # ---------------- KIVI (jy-yuan/KIVI, ICML 2024) ---------------------
@@ -397,6 +589,7 @@ class Policy:
             else:
                 kk, vv = k, v
             rep.resident_bits += out_bits
+            rep.read_bits += out_bits
             sc = ((q @ kk.T) * scaling).masked_fill(~causal, float("-inf"))
             return torch.softmax(sc, -1) @ vv
 
@@ -422,6 +615,44 @@ class Policy:
                 _grow("mass", 0.0, torch.float32)
                 _grow("ek", 0.0, torch.float32)
                 _grow("ev", 0.0, torch.float32)
+                _grow("protected", False, torch.bool)
+                _grow("spectral_active", False, torch.bool)
+                _grow("logit_variance", 0.0, torch.float32)
+                if self.query_gate in ("box", "box_sparse"):
+                    # Summary esatti alla Quest, conservati separatamente dalla
+                    # K graded. Servono a non cambiare il ranking quando una
+                    # pagina viene quantizzata; costo: 2*D fp16 per blocco.
+                    for name, reduce in (
+                            ("box_kmin", lambda x: x.amin(1)),
+                            ("box_kmax", lambda x: x.amax(1))):
+                        old = st.get(name)
+                        new = torch.zeros(
+                            nb0, D, device=k.device, dtype=torch.float16)
+                        if old is not None:
+                            new[:old.shape[0]] = old
+                        new[old_n:] = reduce(kb0[old_n:]).to(torch.float16)
+                        st[name] = new
+                token_protected = torch.zeros(
+                    nb0 * self.block, dtype=torch.bool, device=k.device)
+                if "token_protected" in st:
+                    token_protected[:st["token_protected"].numel()] = st[
+                        "token_protected"]
+                st["token_protected"] = token_protected
+                if self.spectral_rank > 0:
+                    rank = min(self.spectral_rank, self.block, D)
+                    for name in ("spectral_u", "spectral_w"):
+                        old = st.get(name)
+                        new = torch.zeros(
+                            nb0, rank, D, device=k.device, dtype=torch.float32)
+                        if old is not None:
+                            new[:old.shape[0], :old.shape[1]] = old
+                        st[name] = new
+                    old_lam = st.get("spectral_lam")
+                    new_lam = torch.zeros(
+                        nb0, rank, device=k.device, dtype=torch.float32)
+                    if old_lam is not None:
+                        new_lam[:old_lam.shape[0], :old_lam.shape[1]] = old_lam
+                    st["spectral_lam"] = new_lam
                 krec = torch.empty_like(kb0)
                 vrec = torch.empty_like(vb0)
                 if old_n:
@@ -430,33 +661,106 @@ class Policy:
                 krec[old_n:] = kb0[old_n:]      # i blocchi nuovi entrano esatti
                 vrec[old_n:] = vb0[old_n:]
                 st["krec"], st["vrec"] = krec, vrec
+                prior = self.observations.get(hid, {}).get("block_mass")
+                if prior is not None:
+                    nprior = min(int(prior.numel()), nb0)
+                    st["mass"][:nprior] = prior[:nprior].to(
+                        device=k.device, dtype=torch.float32)
             # i blocchi ancora in scrittura restano esatti e non demolibili
             st["krec"][-1] = kb0[-1]
             st["vrec"][-1] = vb0[-1]
+            if self.query_gate in ("box", "box_sparse"):
+                # Il summary del blocco parziale evolve finché il blocco si
+                # chiude. Non viene mai usato per il ranking mentre è parziale.
+                st["box_kmin"][-1] = kb0[-1].amin(0).to(torch.float16)
+                st["box_kmax"][-1] = kb0[-1].amax(0).to(torch.float16)
             hot = torch.zeros(nb0, dtype=torch.bool, device=k.device)
             hot[: max(1, (self.sinks + self.block - 1) // self.block)] = True
             hot[max(0, q_offset // self.block - 1):] = True
             hot[-max(1, (self.window + self.block - 1) // self.block):] = True
+            base_hot = hot.clone()
 
-            mass = self._observed_mass(q[: self.obs], k, scaling, nb0, pad0,
-                                       causal[: self.obs])
-            st["mass"] = 0.9 * st["mass"] + 0.1 * mass
+            # Protezione statica derivata SOLO dalle osservazioni del prompt.
+            # Si decide una volta, quando i blocchi sono ancora esatti, e non si
+            # modifica mai: nessuna promozione e nessun adattamento alla query
+            # valutata. I blocchi sink/recenti, già esatti, sono esclusi per non
+            # sprecare la quota protetta.
+            if self.protected_frac > 0.0 and not st.get(
+                    "protected_initialized", False):
+                if not 0.0 <= self.protected_frac <= 1.0:
+                    raise ValueError("protected_frac deve essere in [0, 1]")
+                prior = self.observations.get(hid, {}).get("block_mass")
+                if prior is not None:
+                    nprior = min(int(prior.numel()), nb0)
+                    eligible = ((torch.arange(nb0, device=k.device) < nprior)
+                                & ~base_hot)
+                    neligible = int(eligible.sum())
+                    if neligible:
+                        nprotect = min(
+                            neligible, max(1, int(
+                                self.protected_frac * nprior + 0.999999)))
+                        score = prior[:nprior].to(
+                            device=k.device, dtype=torch.float32)
+                        score = torch.nn.functional.pad(
+                            score, (0, nb0 - nprior), value=float("-inf"))
+                        score = score.masked_fill(~eligible, float("-inf"))
+                        st["protected"][score.topk(nprotect).indices] = True
+                    st["protected_initialized"] = True
+            hot |= st["protected"]
+
+            # Residuo esatto irregolare, scelto una volta dalle statistiche
+            # SnapKV del prompt. È una copia addizionale esplicita e viene
+            # quindi conteggiata oltre alla cache graded di base.
+            if self.token_protected_frac > 0.0 and not st.get(
+                    "token_protected_initialized", False):
+                token_obs = self.observations.get(hid, {})
+                token_score = token_obs.get("token_score")
+                if token_score is not None:
+                    selected = self._prompt_token_keep(
+                        token_score.to(k.device), q_offset,
+                        nb0 * self.block, self.token_protected_frac,
+                        token_obs.get("token_value_residual"),
+                        token_obs.get("token_key_residual"))
+                    # La continuazione non esisteva al prefill e non fa parte
+                    # della copia addizionale; è già esatta nel blocco hot.
+                    selected[q_offset:] = False
+                    st["token_protected"] |= selected
+                    st["token_protected_initialized"] = True
+
+            # Una chiamata puo' contenere piu' query teacher-forced. Usarle tutte
+            # per decidere la rappresentazione che serve q[0] farebbe dipendere
+            # il suo output da token futuri. La sola query corrente puo' guidare
+            # una demozione; le query successive aggiornano comunque l'EMA per
+            # la prossima chiamata, quando saranno ormai nel passato.
+            if allow_demote:
+                # `policy_attention` passa la massa aggregata di tutte le
+                # query-head GQA che condividono questa KV-head. Nel percorso
+                # unitario si usa la sola query corrente, mai q[1:] futura.
+                mass = observed_mass
+                if mass is None:
+                    mass = self._observed_mass(q[:1], k, scaling, nb0, pad0,
+                                               causal[:1])
+                st["mass"] = (self.mass_decay * st["mass"]
+                              + (1.0 - self.mass_decay) * mass)
 
             # --- politica: livello target per blocco, dal piu' freddo in giu' ---
             lv = st["level"]
             # tabella dei bit per livello, calcolata UNA volta: la versione
             # precedente era una list-comprehension su 256 blocchi a ogni chiamata
-            _lut = torch.tensor([_level_bits(L, self.block, D, self.group)
-                                 for L in LEVELS], device=k.device)
-            _l2i = {L: i for i, L in enumerate(LEVELS)}
+            levels = ([L for L in LEVELS if L != SPECTRAL_LEVEL]
+                      if self.spectral_rank <= 0 else LEVELS)
+            _lut = torch.tensor([_level_bits(
+                L, self.block, D, self.group, self.spectral_rank)
+                                 for L in levels], device=k.device)
 
             def bits_of(L):
-                idx = torch.searchsorted(
-                    torch.tensor([1.0, 2.0, 4.0, 8.0, 16.0], device=k.device),
-                    L.contiguous())
-                return _lut[(len(LEVELS) - 1) - idx.clamp(0, len(LEVELS) - 1)]
+                out = torch.zeros_like(L)
+                for idx, level in enumerate(levels):
+                    out = torch.where(L == level, _lut[idx], out)
+                return out
             total_vals = 2.0 * nb0 * self.block * D
-            if self.budget_bits > 0:
+            layer_budget = self._budget_for(hid)
+            if layer_budget > 0 and allow_demote:
                 # ALLOCAZIONE OTTIMA (rilassamento lagrangiano).
                 # La versione ingenua - prendi il blocco piu' freddo e portalo al
                 # pavimento, poi passa al successivo - ricrea la distribuzione
@@ -467,30 +771,53 @@ class Policy:
                 # budget, risolvendo  min_L  danno + lambda*bit  per ogni blocco e
                 # cercando lambda per bisezione. E' la soluzione esatta del
                 # rilassamento ed e' completamente vettorizzata.
-                rngb = (st["krec"].amax(1) - st["krec"].amin(1)).norm(dim=-1)
-                radb = (st["krec"] - st["krec"].mean(1, keepdim=True)
+                kg = min(self.group, self.block)
+                vg = min(self.group, D)
+                kgrp = st["krec"].view(nb0, self.block // kg, kg, D)
+                vgrp = st["vrec"].view(nb0, self.block, D // vg, vg)
+                krng = kgrp.amax(2) - kgrp.amin(2)       # (nb, G, D)
+                vrng = vgrp.amax(3) - vgrp.amin(3)       # (nb, P, GV)
+                krad = (st["krec"] - st["krec"].mean(1, keepdim=True)
+                        ).norm(dim=-1).amax(-1)
+                vrad = (st["vrec"] - st["vrec"].mean(1, keepdim=True)
                         ).norm(dim=-1).amax(-1)
                 errs, bitl = [], []
-                for L in LEVELS:
+                for L in levels:
                     if L >= 16:
-                        e = torch.zeros_like(rngb)
+                        ek = torch.zeros_like(krad)
+                        ev = torch.zeros_like(vrad)
                     elif L == 1:
-                        e = radb
+                        ek, ev = krad, vrad
+                    elif L == SPECTRAL_LEVEL:
+                        # Surrogato di allocazione: ogni modo rimuove una
+                        # componente dominante della risposta K/V. Il
+                        # certificato sotto resta indipendente e conservativo.
+                        discount = float(1 + self.spectral_rank) ** 0.5
+                        ek, ev = krad / discount, vrad / discount
                     else:
-                        e = rngb / (2.0 * (2 ** L - 1))
+                        den = 2.0 * (2 ** L - 1)
+                        # Bound L2 coerenti con i due layout reali:
+                        # K per-canale su gruppi temporali, V per-token su
+                        # gruppi di canali.
+                        ek = (krng / den).square().sum(-1).sqrt().amax(-1)
+                        ev = ((vrng / den).square() * vg).sum(-1).sqrt().amax(-1)
+                    e = ek + self.alloc_value_weight * ev
                     errs.append(e)
-                    bitl.append(_level_bits(L, self.block, D, self.group))
+                    bitl.append(_level_bits(
+                        L, self.block, D, self.group, self.spectral_rank))
                 E = torch.stack(errs, 1)                       # (nb, 5)
                 B = torch.tensor(bitl, device=k.device)[None]  # (1, 5)
-                dmg = st["mass"][:, None] * E
+                mass_cost = st["mass"].clamp_min(1e-12).pow(
+                    self.alloc_mass_power)
+                dmg = mass_cost[:, None] * E
                 # un blocco non puo' RISALIRE: livelli piu' alti del corrente
                 # sono vietati, e i blocchi caldi restano dove sono
-                lvl_idx = torch.tensor([LEVELS.index(int(x)) for x in lv],
+                lvl_idx = torch.tensor([levels.index(float(x)) for x in lv],
                                        device=k.device)
-                allowed = (torch.arange(len(LEVELS), device=k.device)[None]
+                allowed = (torch.arange(len(levels), device=k.device)[None]
                            >= lvl_idx[:, None])
                 allowed &= ~hot[:, None] | (
-                    torch.arange(len(LEVELS), device=k.device)[None]
+                    torch.arange(len(levels), device=k.device)[None]
                     == lvl_idx[:, None])
                 big = torch.finfo(torch.float32).max / 4
                 # Soluzione ESATTA del rilassamento con UN ordinamento invece di
@@ -498,7 +825,7 @@ class Policy:
                 # ogni possibile demozione e' un "passo" con costo marginale
                 # d_danno/d_bit; si prendono i passi piu' convenienti finche' il
                 # budget e' soddisfatto. E' la stessa soluzione, senza il loop.
-                nlv = len(LEVELS)
+                nlv = len(levels)
                 step_gain = (B[0, :-1] - B[0, 1:])[None].expand(nb0, -1)   # bit risparmiati
                 step_cost = (dmg[:, 1:] - dmg[:, :-1])                     # danno aggiunto
                 ratio = step_cost / step_gain.clamp_min(1e-9)
@@ -514,7 +841,7 @@ class Policy:
                 # ORDINATI dei rapporti, applicando a ogni tentativo la regola
                 # del prefisso: ~11 passi di sole operazioni vettoriali.
                 cand = torch.sort(ratio.reshape(-1)).values
-                target = self.budget_bits * total_vals
+                target = layer_budget * total_vals
                 lo_i, hi_i = 0, cand.numel() - 1
 
                 def _bits_at(lam):
@@ -537,24 +864,44 @@ class Policy:
                     if lo_i >= hi_i:
                         break
                 _, tgt_idx = _bits_at(cand[min(hi_i, cand.numel() - 1)])
-                tgt = torch.tensor([LEVELS[i] for i in tgt_idx.tolist()],
+                tgt = torch.tensor([levels[i] for i in tgt_idx.tolist()],
                                    device=k.device, dtype=torch.float32)
                 if True:
                     # BATCH per livello: un solo kernel per livello invece di uno
                     # per blocco. Misurato: 54.0 ms -> 0.17 ms su 256 blocchi.
                     changed = tgt != lv
-                    for L in LEVELS[1:]:
+                    for L in levels[1:]:
                         m = changed & (tgt == L)
                         if not m.any():
                             continue
                         idx = m.nonzero(as_tuple=True)[0]
                         kold, vold = st["krec"][idx], st["vrec"][idx]
-                        if L == 1:
+                        if L in (1, SPECTRAL_LEVEL):
+                            if L == SPECTRAL_LEVEL:
+                                su, sw, slam = spectral_factors(
+                                    kold, vold, self.spectral_rank)
+                                st["spectral_u"][idx] = su
+                                st["spectral_w"][idx] = sw
+                                st["spectral_lam"][idx] = slam
+                                st["spectral_active"][idx] = True
+                            else:
+                                # Demozione terminale: si scartano i modi e
+                                # resta il solo centroide da 0.25 bpv.
+                                st["spectral_active"][idx] = False
                             kn = kold.mean(1, keepdim=True).expand_as(kold).contiguous()
                             vn = vold.mean(1, keepdim=True).expand_as(vold).contiguous()
                         else:
                             kn, _ = quant_grouped(kold, L, self.group, True)
                             vn, _ = quant_grouped(vold, L, self.group, False)
+                        # Cumulante firmato del log-partition. Il rumore di
+                        # quantizzazione gonfia E[exp(s+e)] e va sottratto;
+                        # fondere nel centroide rimuove la varianza interna
+                        # (Jensen) e richiede il segno opposto.
+                        delta_var = (kold - kn).square().mean(dim=(1, 2))
+                        sign = (1.0 if L in (1, SPECTRAL_LEVEL) else -1.0)
+                        st["logit_variance"][idx] = (
+                            st["logit_variance"][idx] + sign * delta_var
+                        ).to(torch.float16).float()
                         st["ek"][idx] += (kold - kn).norm(dim=-1).amax(-1)
                         st["ev"][idx] += (vold - vn).norm(dim=-1).amax(-1)
                         st["krec"][idx], st["vrec"][idx] = kn, vn
@@ -562,18 +909,245 @@ class Policy:
 
             kk = st["krec"].reshape(-1, D)[:T]
             vv = st["vrec"].reshape(-1, D)[:T]
-            rep.resident_bits += float(bits_of(lv).sum())
-            w = torch.softmax(((q @ kk.T) * scaling).masked_fill(
-                ~causal, float("-inf")), -1)
+            block_cache_bits = bits_of(lv)
+            token_extra_bits = torch.zeros_like(block_cache_bits)
+            cache_bits = float(block_cache_bits.sum())
+            token_protected = st["token_protected"][:T]
+            if token_protected.any():
+                # Non modificare `st["krec"]`: la copia esatta è un residuo
+                # separato, non una promozione della rappresentazione graded.
+                kk, vv = kk.clone(), vv.clone()
+                kk[token_protected] = k[token_protected]
+                vv[token_protected] = v[token_protected]
+                token_count = token_protected
+                if pad0:
+                    token_count = torch.nn.functional.pad(
+                        token_count, (0, pad0))
+                token_extra_bits = token_count.view(
+                    nb0, self.block).sum(-1).to(
+                        block_cache_bits.dtype) * (2.0 * D * 16.0)
+                cache_bits += float(token_extra_bits.sum())
+            if self.cumulant_strength != 0.0:
+                # Un solo cumulante fp16 per blocco. L'overhead è ~0.001 bpv
+                # con P=64,D=128, ma viene comunque contabilizzato.
+                cache_bits += nb0 * 16.0
+                block_cache_bits = block_cache_bits + 16.0
+            block_cache_bits = block_cache_bits + token_extra_bits
+            box_summary_bits = 0.0
+            if self.query_gate in ("box", "box_sparse"):
+                box_summary_bits = float(nb0 * 2 * D * 16)
+                cache_bits += box_summary_bits
+            rep.resident_bits += cache_bits
+            sparse_box_read = (
+                self.query_gate == "box_sparse"
+                and self.query_keep_frac < 1.0
+                and self.query_cold_bias > 0.0)
+            if not sparse_box_read:
+                # I gate finiti leggono ancora tutta la cache packed.
+                rep.read_bits += cache_bits
+            sparse_read_mask = None
+            eps_s = scaling * float(q.norm(dim=-1).max()) * st["ek"]
+            scores = (q @ kk.T) * scaling
+            moment_delta = None
+            moment_log_bias = torch.zeros(
+                Q, nb0, device=q.device, dtype=scores.dtype)
+            if self.cumulant_strength != 0.0:
+                cumulant_bias = (
+                    0.5 * self.cumulant_strength * scaling ** 2
+                    * q.square().sum(-1, keepdim=True)
+                    * st["logit_variance"][None])
+                scores = scores + cumulant_bias.repeat_interleave(
+                    self.block, dim=1)[:, :T]
+                # Il bias deliberato si somma al bound sul logit originale.
+                moment_log_bias = moment_log_bias + cumulant_bias.abs()
+            spectral_idx = st["spectral_active"].nonzero(as_tuple=True)[0]
+            if spectral_idx.numel():
+                if not 0.0 <= self.spectral_strength <= 1.0:
+                    raise ValueError("spectral_strength deve essere in [0, 1]")
+                # Cumulante di ordine 2 del log-partition:
+                # log E exp(q·delta_k) ~= log(1 + Var/2).
+                su = st["spectral_u"][spectral_idx]
+                sw = st["spectral_w"][spectral_idx]
+                slam = st["spectral_lam"][spectral_idx]
+                a = torch.einsum("qd,nrd->qnr", q * scaling, su)
+                var = (a.square() * slam[None]).sum(-1)
+                denom = 1.0 + 0.5 * var
+                log_corr = denom.log() * self.spectral_strength
+                moment_delta = (
+                    torch.einsum("qnr,nrd->qnd", a, sw)
+                    / denom[..., None] * self.spectral_strength)
+
+                # Un blocco spettrale è un solo stato con molteplicità pari al
+                # numero di token che rappresenta. Gli altri pseudo-token del
+                # blocco vengono rimossi dal softmax.
+                for col, block_idx in enumerate(spectral_idx.tolist()):
+                    start = block_idx * self.block
+                    nvalid = min(self.block, T - start)
+                    scores[:, start:start + nvalid] = float("-inf")
+                    base = (q @ kk[start]) * scaling
+                    scores[:, start] = (
+                        base + torch.log(torch.tensor(
+                            float(nvalid), device=q.device)) + log_corr[:, col])
+                    moment_log_bias[:, block_idx] = log_corr[:, col].abs()
+            # Gate query-adaptive con fallback FINITO: la cache non viene
+            # evitta e i blocchi freddi restano nel softmax, ma ricevono un
+            # offset negativo. Con bias grande si ottiene la regolarizzazione
+            # dei metodi sparse; con bias finito una needle non sparisce.
+            #
+            # La selezione considera soltanto blocchi interamente chiusi prima
+            # di q[0]. Il blocco corrente e la finestra hot restano sempre
+            # leggibili, quindi né ranking né statistiche dipendono dal futuro.
+            cert_eps = eps_s[None].expand(Q, -1)
+            cert_eps = cert_eps + moment_log_bias
+            gate_on = self.query_keep_frac < 1.0 and self.query_cold_bias > 0.0
+            if gate_on:
+                if not 0.0 <= self.query_keep_frac <= 1.0:
+                    raise ValueError("query_keep_frac deve essere in [0, 1]")
+                if self.query_gate == "token":
+                    token_obs = self.observations.get(hid, {})
+                    token_score = token_obs.get("token_score")
+                    if token_score is None:
+                        raise ValueError(
+                            "query_gate=token richiede osservazioni del prefill")
+                    selected_token = self._prompt_token_keep(
+                        token_score.to(k.device), q_offset, T,
+                        self.query_keep_frac,
+                        token_obs.get("token_value_residual"),
+                        token_obs.get("token_key_residual"))
+                    candidates_token = torch.arange(
+                        T, device=k.device) < q_offset
+                    cold_token = candidates_token & ~selected_token
+                    token_bias = (cold_token.to(scores.dtype)
+                                  * self.query_cold_bias)
+                    scores = scores - token_bias[None]
+                    # Il certificato per blocco usa il massimo bias dei token
+                    # del blocco. È più largo del necessario ma rigoroso anche
+                    # quando un blocco contiene token selezionati e freddi.
+                    block_bias = token_bias
+                    if pad0:
+                        block_bias = torch.nn.functional.pad(
+                            block_bias, (0, pad0))
+                    block_bias = block_bias.view(
+                        nb0, self.block).amax(-1)[None].expand(Q, -1)
+                    cert_eps = cert_eps + block_bias
+                    rep.gate_candidate_blocks += int(candidates_token.sum()) * Q
+                    rep.gate_selected_blocks += int(
+                        (candidates_token & selected_token).sum()) * Q
+                else:
+                    bend = ((torch.arange(nb0, device=k.device) + 1)
+                            * self.block)
+                    if self.query_gate == "box_sparse":
+                        # Come Quest: tutte le pagine chiuse competono nel
+                        # top-k; soltanto la pagina corrente è sempre letta.
+                        # Sink/window possono restare esatti nella cache
+                        # residente, ma non devono consumare banda se il bound
+                        # non li seleziona.
+                        bstart = bend - self.block
+                        gate_always_read = (
+                            (bstart <= q_offset) & (bend > q_offset))
+                        candidates = bend <= q_offset
+                    else:
+                        gate_always_read = base_hot
+                        candidates = (bend <= q_offset) & ~base_hot
+                    ncand = int(candidates.sum())
+                    if not ncand:
+                        candidates = None
+                if self.query_gate != "token" and candidates is not None:
+                    nkeep = min(
+                        ncand, max(1, int(torch.ceil(torch.tensor(
+                            self.query_keep_frac * ncand)).item())))
+                    if self.query_gate == "mass":
+                        gate_score = st["mass"][None].expand(Q, -1)
+                    elif self.query_gate == "protected":
+                        gate_score = st["protected"].to(
+                            q.dtype)[None].expand(Q, -1)
+                    else:
+                        if self.query_gate in ("box", "box_sparse"):
+                            gate_score = box_bound(
+                                q, st["box_kmin"].float(),
+                                st["box_kmax"].float(),
+                                scaling)
+                        else:
+                            kcent = st["krec"].mean(1)
+                            gate_score = (q @ kcent.T) * scaling
+                            if self.query_gate == "hybrid":
+                                gate_score = gate_score + st["mass"].clamp_min(
+                                    1e-12).log()[None]
+                            elif self.query_gate not in ("centroid", "born"):
+                                raise ValueError(
+                                    f"query_gate sconosciuto: {self.query_gate}")
+                    ranked = gate_score.masked_fill(
+                        ~candidates[None], float("-inf"))
+                    selected = torch.zeros(
+                        Q, nb0, dtype=torch.bool, device=k.device)
+                    if self.query_gate == "born":
+                        # Proiezione minima a fidelity eta: la frazione è una
+                        # soglia di massa, non un numero fisso di blocchi.
+                        # `prefix_before < eta` include anche il blocco che
+                        # attraversa la soglia e garantisce almeno uno stato.
+                        prob = torch.softmax(ranked, dim=-1)
+                        sorted_prob, order = prob.sort(dim=-1, descending=True)
+                        prefix_before = sorted_prob.cumsum(-1) - sorted_prob
+                        take = prefix_before < self.query_keep_frac
+                        selected.scatter_(1, order, take)
+                    else:
+                        selected.scatter_(
+                            1, ranked.topk(nkeep, dim=-1).indices, True)
+                    selected &= candidates[None]
+                    cold = candidates[None] & ~selected
+                    if self.query_gate == "box_sparse":
+                        cold_token = cold.repeat_interleave(
+                            self.block, 1)[:, :T]
+                        scores = scores.masked_fill(cold_token, float("-inf"))
+                        # Un errore infinito produce il bound universale L1<=2,
+                        # rigoroso anche se le pagine vengono saltate del tutto.
+                        block_bias = torch.zeros_like(
+                            cold, dtype=scores.dtype).masked_fill(
+                                cold, float("inf"))
+                        sparse_read_mask = (
+                            selected | gate_always_read[None].expand(Q, -1))
+                    else:
+                        block_bias = (
+                            cold.to(scores.dtype) * self.query_cold_bias)
+                        scores = scores - block_bias.repeat_interleave(
+                            self.block, 1)[:, :T]
+                    # Il bias è un errore di logit deliberato. Aggiungerlo a
+                    # epsilon rende il certificato valido rispetto
+                    # all'attenzione piena originale, non rispetto a un nuovo
+                    # oracolo sparsificato.
+                    cert_eps = cert_eps + block_bias
+                    rep.gate_candidate_blocks += Q * ncand
+                    rep.gate_selected_blocks += int(selected.sum())
+            if sparse_box_read:
+                if sparse_read_mask is None:
+                    # Nessun blocco freddo selezionabile: leggere il packed
+                    # completo più i summary è il fallback esatto.
+                    rep.read_bits += float(block_cache_bits.sum()
+                                           ) + box_summary_bits
+                else:
+                    packed_read = (
+                        sparse_read_mask.to(block_cache_bits.dtype)
+                        * block_cache_bits[None]).sum(-1).mean()
+                    # Tutti i min/max esatti vengono letti per il ranking; dei
+                    # dati K/V si leggono solo pagine scelte e hot.
+                    rep.read_bits += float(packed_read) + box_summary_bits
+            w = torch.softmax(scores.masked_fill(~causal, float("-inf")), -1)
             out = w @ vv
+            if moment_delta is not None:
+                starts = spectral_idx * self.block
+                out = out + torch.einsum(
+                    "qn,qnd->qd", w[:, starts], moment_delta)
             with torch.no_grad():
-                eps_s = scaling * float(q.norm(dim=-1).max()) * st["ek"]
                 wb = torch.nn.functional.pad(w, (0, pad0)).view(
                     Q, nb0, self.block).sum(-1)
                 term_v = (wb * st["ev"][None]).sum(-1)
+                if moment_delta is not None:
+                    term_v = term_v + (
+                        w[:, spectral_idx * self.block]
+                        * moment_delta.norm(dim=-1)).sum(-1)
                 logw = wb.clamp_min(1e-30).log()
-                lp = torch.logsumexp(logw + eps_s[None], -1)
-                lm = torch.logsumexp(logw - eps_s[None], -1)
+                lp = torch.logsumexp(logw + cert_eps, -1)
+                lm = torch.logsumexp(logw - cert_eps, -1)
                 l1 = (torch.exp((lp - lm).clamp(max=20.0))
                       - torch.exp((lm - lp).clamp(min=-20.0))).clamp(0.0, 2.0)
                 bound = term_v + l1 * float(v.norm(dim=-1).max())
@@ -661,7 +1235,7 @@ class Policy:
             # --- il POZZO: i blocchi piu' freddi collassano nel loro centroide.
             # Non e' eviction: il blocco resta nel softmax col suo peso (64 copie
             # della chiave media), ma senza dettaglio. Costo: 1 chiave + 1 valore
-            # per blocco = 0.5 bit/valore con block=64 -> e' cosi' che si scende
+            # per blocco = 0.25 bit/valore con block=64 -> e' cosi' che si scende
             # SOTTO i 2 bit/valore senza buttare via contesto.
             if self.freeze:
                 pass                       # gia' deciso e congelato sopra
@@ -735,7 +1309,9 @@ class Policy:
 
             kk = kh.reshape(-1, D)[:T]
             vv = vh.reshape(-1, D)[:T]
-            rep.resident_bits += float(res_bits.sum())
+            cache_bits = float(res_bits.sum())
+            rep.resident_bits += cache_bits
+            rep.read_bits += cache_bits
 
             scores = (q @ kk.T) * scaling
             if self.centroid_moment and centroid.any():
@@ -810,7 +1386,74 @@ class Policy:
 # --------------------------------------------------------------------------- #
 
 ACTIVE: Policy | None = None
+OBSERVER: Policy | None = None
 MIN_CTX = 512          # sotto questa lunghezza si usa l'attenzione esatta
+
+
+def observation_attention(module, query, key, value, attention_mask, scaling,
+                          dropout=0.0, **kwargs):
+    """Prefill esatto che raccoglie statistiche causali senza comprimere.
+
+    Geodesia usa la massa per blocco; SnapKV usa lo score per token sulle ultime
+    query del prompt. In entrambi i casi l'attenzione restituita resta SDPA
+    esatta e le osservazioni riguardano soltanto posizioni gia' disponibili.
+    """
+    pol = OBSERVER
+    if pol is not None and pol.name in ("geodesia", "snapkv"):
+        B, H, Q, D = query.shape
+        T = key.shape[-2]
+        Hkv = key.shape[1]
+        reps = H // Hkv
+        use_token_score = (
+            pol.name == "snapkv"
+            or (pol.name == "geodesia"
+                and (pol.query_gate == "token"
+                     or pol.token_protected_frac > 0.0)))
+        obs_window = pol.snap_window if use_token_score else pol.obs
+        n_obs = min(obs_window, Q)
+        q_start = T - Q + (Q - n_obs)
+        kpos = torch.arange(T, device=key.device)
+        qpos = q_start + torch.arange(n_obs, device=key.device)
+        causal = kpos[None, :] <= qpos[:, None]
+        qf, kf = query.float(), key.float()
+        layer = getattr(module, "layer_idx", 0)
+        with torch.no_grad():
+            for b in range(B):
+                for hk in range(Hkv):
+                    h0, h1 = hk * reps, (hk + 1) * reps
+                    qo = qf[b, h0:h1, -n_obs:].reshape(reps * n_obs, D)
+                    sc = (qo @ kf[b, hk].T) * scaling
+                    cmask = causal[None].expand(reps, -1, -1).reshape(
+                        reps * n_obs, T)
+                    weight = torch.softmax(
+                        sc.masked_fill(~cmask, float("-inf")), -1)
+                    obs = pol.observations.setdefault((layer, b, hk), {})
+                    if use_token_score:
+                        obs["token_score"] = weight.sum(0).detach()
+                        if (pol.token_value_power != 0.0
+                                or pol.token_key_power != 0.0):
+                            def token_residual(x):
+                                xb, pad = blockify(x, pol.block)
+                                residual = (xb - xb.mean(
+                                    1, keepdim=True)).norm(dim=-1).reshape(-1)
+                                return residual[:T].detach()
+
+                            obs["token_key_residual"] = token_residual(
+                                kf[b, hk])
+                            obs["token_value_residual"] = token_residual(
+                                value[b, hk].float())
+                    if pol.name == "geodesia":
+                        nb = (T + pol.block - 1) // pol.block
+                        pad = nb * pol.block - T
+                        if pad:
+                            weight = torch.nn.functional.pad(weight, (0, pad))
+                        obs["block_mass"] = weight.view(
+                            reps * n_obs, nb, pol.block).sum(-1).mean(0).detach()
+
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+    return ALL_ATTENTION_FUNCTIONS["sdpa"](
+        module, query, key, value, attention_mask,
+        dropout=dropout, scaling=scaling, **kwargs)
 
 
 def policy_attention(module, query, key, value, attention_mask, scaling,
@@ -826,8 +1469,8 @@ def policy_attention(module, query, key, value, attention_mask, scaling,
         # posizioni assolute. Verificato contro un forward unico causale.
         from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
         return ALL_ATTENTION_FUNCTIONS["sdpa"](module, query, key, value,
-                                               attention_mask, scaling,
-                                               dropout=dropout, **kwargs)
+                                               attention_mask, dropout=dropout,
+                                               scaling=scaling, **kwargs)
 
     B, H, Q, D = query.shape
     Hkv = key.shape[1]
@@ -842,10 +1485,35 @@ def policy_attention(module, query, key, value, attention_mask, scaling,
         # memorizzata una volta sola e condivisa dalle `reps` query head del
         # gruppo GQA. Tenere una compressione diversa per query head non sarebbe
         # implementabile - e falsava sia il costo sia la qualita'.
-        heads = [pol.attend(qf[b, h], kf[b, h // reps], vf[b, h // reps], scaling,
-                            q_offset,
-                            (getattr(module, "layer_idx", 0), b, h // reps))
-                 for h in range(H)]
+        # La KV e' condivisa dalle `reps` query-head GQA: l'importanza va
+        # aggregata su tutte le teste del gruppo, poi la cache viene demolita una
+        # sola volta. Usare soltanto la prima testa perdeva le needle viste dalle
+        # altre; demolire una volta per testa produceva cache fisicamente
+        # impossibili e dipendenti dall'ordine.
+        heads = []
+        for hk in range(Hkv):
+            h0, h1 = hk * reps, (hk + 1) * reps
+            shared_mass = None
+            if pol.name == "geodesia":
+                q_now = qf[b, h0:h1, :1].reshape(reps, D)
+                kh = kf[b, hk]
+                valid = torch.arange(T, device=kh.device) <= q_offset
+                score = (q_now @ kh.T) * scaling
+                weight = torch.softmax(
+                    score.masked_fill(~valid[None], float("-inf")), -1)
+                nb = (T + pol.block - 1) // pol.block
+                pad = nb * pol.block - T
+                if pad:
+                    weight = torch.nn.functional.pad(weight, (0, pad))
+                shared_mass = weight.view(
+                    reps, nb, pol.block).sum(-1).mean(0)
+            for h in range(h0, h1):
+                first = h == h0
+                heads.append(pol.attend(
+                    qf[b, h], kf[b, hk], vf[b, hk], scaling, q_offset,
+                    (getattr(module, "layer_idx", 0), b, hk),
+                    allow_demote=first,
+                    observed_mass=shared_mass if first else None))
         outs.append(torch.stack(heads))
     out = torch.stack(outs).to(query.dtype)
     return out.transpose(1, 2).contiguous(), None
@@ -905,15 +1573,23 @@ def vq_blocks(kb: torch.Tensor, vb: torch.Tensor, c: int, iters: int = 3):
 # demozione monotona guidata dal budget: il design di produzione
 # --------------------------------------------------------------------------- #
 
-LEVELS = [16, 8, 4, 2, 1]      # 1 = centroide (un solo vettore per blocco)
+SPECTRAL_LEVEL = 1.5
+LEVELS = [16, 8, 4, 2, SPECTRAL_LEVEL, 1]
+# 1.5 = centroide + modi K/V a rango basso; 1 = solo centroide. I numeri sono
+# identificatori ordinati di livello, non il costo effettivo in bit/valore.
 
 
-def _level_bits(level: int, block: int, D: int, group: int) -> float:
+def _level_bits(level: int, block: int, D: int, group: int,
+                spectral_rank: int = 0) -> float:
     """Bit residenti di un blocco a un dato livello, scale incluse."""
     if level >= 16:
         return 2.0 * block * D * 16.0
-    if level == 1:                                   # centroide
+    if level == 1:                                   # solo centroide
         return 2.0 * D * 16.0
+    if level == SPECTRAL_LEVEL:
+        rank = max(0, min(int(spectral_rank), block, D))
+        # mu_K, mu_V + per modo U_K, W_V e una varianza scalare, tutti fp16.
+        return 2.0 * D * 16.0 * (1 + rank) + rank * 16.0
     ngroup = max(1, block // group)
     return (2.0 * level * block * D
             + ngroup * D * 32.0                      # scale K, per canale

@@ -1,0 +1,229 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "quantization": "nf4",
+  "gpu": "NVIDIA RTX A6000",
+  "gpu_total_bytes": 50897289216,
+  "weights_bytes": 2064990208,
+  "free_after_load_bytes": 48333848576,
+  "decode_overhead": {
+    "cache_len": 8192,
+    "cache_bytes": 301989888,
+    "activation_peak_bytes": 12770816
+  },
+  "packed_real": {
+    "context": 16384,
+    "packed_bytes_one_head": 1033520,
+    "bytes_per_token_all_layers": 4541.8359375,
+    "bits_per_value_packed": 1.971282958984375,
+    "bits_per_value_accounted": 1.9951171875
+  },
+  "kv_values_per_token": 18432,
+  "cache_budget_bytes": 48321077760,
+  "native_context": 32768,
+  "results": [
+    {
+      "policy": "Full-KV BF16",
+      "kind": "retain",
+      "bits_per_value": 16.0,
+      "bytes_per_token": 36864.0,
+      "resident_bytes": null,
+      "max_context_vram": 1310793,
+      "retained_context": 1310793,
+      "source": "definizione: bf16 senza compressione"
+    },
+    {
+      "policy": "Quest p=32",
+      "kind": "retain",
+      "bits_per_value": 16.250489,
+      "bytes_per_token": 37441.12665600001,
+      "resident_bytes": null,
+      "max_context_vram": 1290588,
+      "retained_context": 1290588,
+      "source": "qwen8b_pg19_16k_quest_vs_compressed_quest_incremental_eleven_books.json"
+    },
+    {
+      "policy": "Compressed-Quest B=10",
+      "kind": "retain",
+      "bits_per_value": 9.836099,
+      "bytes_per_token": 22662.372096000003,
+      "resident_bytes": null,
+      "max_context_vram": 2132216,
+      "retained_context": 2132216,
+      "source": "qwen8b_pg19_16k_quest_vs_compressed_quest_incremental_eleven_books.json"
+    },
+    {
+      "policy": "KIVI-4",
+      "kind": "retain",
+      "bits_per_value": 5.031156,
+      "bytes_per_token": 11591.783424000001,
+      "resident_bytes": null,
+      "max_context_vram": 4168562,
+      "retained_context": 4168562,
+      "source": "qwen8b_pg19_16k_kivi4_vs_graded_mix_incremental_eleven_books.json"
+    },
+    {
+      "policy": "Geodesia graded+RD 5-bit",
+      "kind": "retain",
+      "bits_per_value": 4.989738,
+      "bytes_per_token": 11496.356352,
+      "resident_bytes": null,
+      "max_context_vram": 4203164,
+      "retained_context": 4203164,
+      "source": "qwen8b_pg19_16k_kivi4_vs_graded_mix_incremental_eleven_books.json"
+    },
+    {
+      "policy": "KIVI-2",
+      "kind": "retain",
+      "bits_per_value": 3.050781,
+      "bytes_per_token": 7028.9994240000005,
+      "resident_bytes": null,
+      "max_context_vram": 6874531,
+      "retained_context": 6874531,
+      "source": "qwen8b_16k_ten_window_corrected_axes_eval64.json"
+    },
+    {
+      "policy": "Geodesia RD-V2 2-bit",
+      "kind": "retain",
+      "bits_per_value": 2.061,
+      "bytes_per_token": 4748.544,
+      "resident_bytes": null,
+      "max_context_vram": 10175977,
+      "retained_context": 10175977,
+      "source": "qwen8b_16k_rd_saliency_frozen_holdout_offsets196608_229376.json"
+    },
+    {
+      "policy": "StreamingLLM b=2048",
+      "kind": "evict",
+      "bits_per_value": null,
+      "bytes_per_token": null,
+      "resident_bytes": 75497472,
+      "max_context_vram": null,
+      "retained_context": 2048,
+      "source": "budget fisso 2048 token bf16"
+    },
+    {
+      "policy": "SnapKV b=2048",
+      "kind": "evict",
+      "bits_per_value": null,
+      "bytes_per_token": null,
+      "resident_bytes": 75497472,
+      "max_context_vram": null,
+      "retained_context": 2048,
+      "source": "budget fisso 2048 token bf16"
+    }
+  ],
+  "verified_search": {
+    "Full-KV BF16": {
+      "context": 1290239,
+      "peak_bytes": 50298588672,
+      "verified": "decode reale"
+    },
+    "Geodesia RD-V2 2-bit": {
+      "context": 10169227,
+      "peak_bytes": 50363580416,
+      "verified": "allocazione reale"
+    }
+  },
+  "nominal_gib": 47,
+  "usable_fraction": 1.0085488177360373,
+  "projected_vram": {
+    "16.0": {
+      "usable_bytes": 17326736754.38298,
+      "cache_budget_bytes": 15248975730.38298,
+      "fits_model": true,
+      "max_context": {
+        "Full-KV BF16": 413654,
+        "Quest p=32": 407278,
+        "Compressed-Quest B=10": 672876,
+        "KIVI-4": 1315498,
+        "Geodesia graded+RD 5-bit": 1326418,
+        "KIVI-2": 2169437,
+        "Geodesia RD-V2 2-bit": 3211295,
+        "StreamingLLM b=2048": null,
+        "SnapKV b=2048": null
+      }
+    },
+    "24.0": {
+      "usable_bytes": 25990105131.57447,
+      "cache_budget_bytes": 23912344107.57447,
+      "fits_model": true,
+      "max_context": {
+        "Full-KV BF16": 648663,
+        "Quest p=32": 638665,
+        "Compressed-Quest B=10": 1055156,
+        "KIVI-4": 2062870,
+        "Geodesia graded+RD 5-bit": 2079993,
+        "KIVI-2": 3401955,
+        "Geodesia RD-V2 2-bit": 5035721,
+        "StreamingLLM b=2048": null,
+        "SnapKV b=2048": null
+      }
+    },
+    "48.0": {
+      "usable_bytes": 51980210263.14894,
+      "cache_budget_bytes": 49902449239.14894,
+      "fits_model": true,
+      "max_context": {
+        "Full-KV BF16": 1353690,
+        "Quest p=32": 1332824,
+        "Compressed-Quest B=10": 2201995,
+        "KIVI-4": 4304984,
+        "Geodesia graded+RD 5-bit": 4340718,
+        "KIVI-2": 7099509,
+        "Geodesia RD-V2 2-bit": 10509000,
+        "StreamingLLM b=2048": null,
+        "SnapKV b=2048": null
+      }
+    },
+    "64.0": {
+      "usable_bytes": 69306947017.53192,
+      "cache_budget_bytes": 67229185993.53192,
+      "fits_model": true,
+      "max_context": {
+        "Full-KV BF16": 1823708,
+        "Quest p=32": 1795597,
+        "Compressed-Quest B=10": 2966555,
+        "KIVI-4": 5799727,
+        "Geodesia graded+RD 5-bit": 5847869,
+        "KIVI-2": 9564545,
+        "Geodesia RD-V2 2-bit": 14157852,
+        "StreamingLLM b=2048": null,
+        "SnapKV b=2048": null
+      }
+    }
+  },
+  "emulated_vram": {
+    "16.0": {
+      "context": 393215,
+      "peak_bytes": 50342628864,
+      "verified": "decode reale"
+    }
+  },
+  "concurrency": {
+    "40960": {
+      "Full-KV BF16": 32,
+      "Quest p=32": 31,
+      "Compressed-Quest B=10": 52,
+      "KIVI-4": 101,
+      "Geodesia graded+RD 5-bit": 102,
+      "KIVI-2": 167,
+      "Geodesia RD-V2 2-bit": 248,
+      "StreamingLLM b=2048": null,
+      "SnapKV b=2048": null
+    },
+    "131072": {
+      "Full-KV BF16": 10,
+      "Quest p=32": 9,
+      "Compressed-Quest B=10": 16,
+      "KIVI-4": 31,
+      "Geodesia graded+RD 5-bit": 32,
+      "KIVI-2": 52,
+      "Geodesia RD-V2 2-bit": 77,
+      "StreamingLLM b=2048": null,
+      "SnapKV b=2048": null
+    }
+  },
+  "torch": "2.10.0+cu128",
+  "transformers": "5.8.0",
+  "git_commit": "6c5ac302665d3334ef493e27530d0149d5aa972e"
+}

@@ -1,4 +1,4 @@
-"""Misure di SISTEMA: VRAM di picco e throughput reali, non contabilizzati.
+"""Misure isolate di cache packed e kernel, non throughput end-to-end.
 
 Tutte le tabelle precedenti riportano bit/valore CONTABILIZZATI: la cache viveva
 comunque in bf16 e il risparmio era una scrittura sul registro, non byte
@@ -6,7 +6,10 @@ risparmiati. Qui la cache e' costruita nella forma realmente impacchettata
 (`uint8` + scale) e l'attenzione passa dal kernel CUDA fuso, quindi:
 
   - la VRAM misurata con `torch.cuda.max_memory_allocated` e' quella vera;
-  - il tempo per token e' quello vero, dequantizzazione inclusa.
+  - il kernel include realmente la dequantizzazione;
+  - tutte le KV-head di un layer vengono lanciate in parallelo;
+  - i layer restano stimati serialmente, quindi il risultato è costo
+    attention-only, non tok/s di generazione del modello.
 
 Confronto contro la cache bf16 densa alla stessa lunghezza di contesto, e contro
 i baseline a eviction (che occupano meno perche' BUTTANO token: il confronto
@@ -88,7 +91,7 @@ def real_levels(k, v, budget, block, group, window, sinks):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen2.5-3B-Instruct")
+    ap.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct")
     ap.add_argument("--contexts", type=int, nargs="*",
                     default=[16384, 65536, 131072])
     ap.add_argument("--budgets", type=float, nargs="*", default=[3.0, 2.0])
@@ -101,9 +104,8 @@ def main() -> None:
     if ext is None:
         raise SystemExit("kernel CUDA non disponibile")
 
-    import json as _json
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    cfg = _json.load(open(os.path.join(args.model, "config.json")))
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+    cfg = AutoConfig.from_pretrained(args.model).to_dict()
     t = cfg.get("text_config", cfg)
     # modelli ibridi (Qwen3.5): solo i layer full_attention hanno una KV cache
     lt = t.get("layer_types")
@@ -120,7 +122,9 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         args.model, dtype=torch.bfloat16, device_map="cuda",
         attn_implementation="sdpa").eval()
-    ids = tok(open(args.text).read(), return_tensors="pt").input_ids
+    max_ctx = max(args.contexts)
+    ids = tok(open(args.text).read(), return_tensors="pt",
+              max_length=max_ctx, truncation=True).input_ids
 
     rows = []
     for T in args.contexts:
@@ -155,12 +159,23 @@ def main() -> None:
             total_bytes = cache_bytes * Hkv * L
 
             G, gv = (block + group - 1) // group, (D + group - 1) // group
-            q = torch.randn(1, 1, D, device=dev)
-            argl = (q.contiguous(), lay["data"].view(1, 1, -1).contiguous(),
-                    lay["offs"], lay["klo"].view(1, 1, nb, G, D).contiguous(),
-                    lay["kstep"].view(1, 1, nb, G, D).contiguous(),
-                    lay["vlo"].view(1, 1, nb, block, gv).contiguous(),
-                    lay["vstep"].view(1, 1, nb, block, gv).contiguous(),
+            # Il kernel supporta H>1: replicare la testa rappresentativa
+            # permette di misurare il parallelismo reale intra-layer. Il
+            # precedente script misurava H=1 e moltiplicava per Hkv, trattando
+            # artificialmente le teste come seriali.
+            q = torch.randn(1, Hkv, D, device=dev)
+            data_h = lay["data"].view(1, 1, -1).expand(
+                1, Hkv, -1).contiguous()
+            klo_h = lay["klo"].view(1, 1, nb, G, D).expand(
+                1, Hkv, -1, -1, -1).contiguous()
+            kstep_h = lay["kstep"].view(1, 1, nb, G, D).expand(
+                1, Hkv, -1, -1, -1).contiguous()
+            vlo_h = lay["vlo"].view(1, 1, nb, block, gv).expand(
+                1, Hkv, -1, -1, -1).contiguous()
+            vstep_h = lay["vstep"].view(1, 1, nb, block, gv).expand(
+                1, Hkv, -1, -1, -1).contiguous()
+            argl = (q.contiguous(), data_h,
+                    lay["offs"], klo_h, kstep_h, vlo_h, vstep_h,
                     lay["level"], lay["valid"], block, group)
             for _ in range(3):
                 ext.mixed_attn_decode(*argl)
@@ -169,19 +184,25 @@ def main() -> None:
             for _ in range(args.steps):
                 ext.mixed_attn_decode(*argl)
             torch.cuda.synchronize()
-            ms_head = (time.time() - t0) / args.steps * 1000
-            ms_token = ms_head * Hkv * L          # tutte le teste, tutti i layer
+            ms_layer = (time.time() - t0) / args.steps * 1000
+            ms_token = ms_layer * L               # layer seriali, head parallele
 
-            # riferimento denso bf16 sulla stessa coppia
-            kk = k.view(T, D).to(torch.bfloat16)
-            vv = v.view(T, D).to(torch.bfloat16)
-            qb = q.view(1, D).to(torch.bfloat16)
+            # Riferimento denso: stessa testa replicata Hkv volte e un unico
+            # lancio batched per layer, coerente con la misura packed.
+            kk = k.view(T, D).to(torch.bfloat16)[None].expand(
+                Hkv, -1, -1).contiguous()
+            vv = v.view(T, D).to(torch.bfloat16)[None].expand(
+                Hkv, -1, -1).contiguous()
+            qb = q.view(Hkv, 1, D).to(torch.bfloat16)
             torch.cuda.synchronize()
             t0 = time.time()
             for _ in range(args.steps):
-                torch.softmax((qb @ kk.T).float(), -1) @ vv.float()
+                prob = torch.softmax(torch.bmm(
+                    qb, kk.transpose(1, 2)).float(), -1)
+                torch.bmm(prob, vv.float())
             torch.cuda.synchronize()
-            ms_dense = (time.time() - t0) / args.steps * 1000 * Hkv * L
+            ms_dense_layer = (time.time() - t0) / args.steps * 1000
+            ms_dense = ms_dense_layer * L
 
             row = {"context": T, "budget_bits": budget,
                    "level_histogram": hist, "bits_per_value_allocator": bpv_alloc,
@@ -189,10 +210,15 @@ def main() -> None:
                    "cache_GiB_dense_bf16": dense_bytes / 2 ** 30,
                    "compression": dense_bytes / max(total_bytes, 1),
                    "bits_per_value": 16 * total_bytes / dense_bytes,
+                   "ms_per_layer_geodesia_all_kv_heads": ms_layer,
+                   "ms_per_layer_dense_all_kv_heads": ms_dense_layer,
                    "ms_per_token_geodesia": ms_token,
                    "ms_per_token_dense": ms_dense,
                    "tok_s_geodesia": 1000.0 / ms_token,
-                   "tok_s_dense": 1000.0 / ms_dense}
+                   "tok_s_dense": 1000.0 / ms_dense,
+                   "throughput_scope": (
+                       "attention-only estimate: measured all KV heads "
+                       "in parallel, multiplied by serial layers")}
             rows.append(row)
             print(f"ctx {T:>7} budget {budget:.1f}: "
                   f"cache {row['cache_GiB_measured']:6.2f} GiB vs "

@@ -1,0 +1,93 @@
+{
+  "model": "Qwen/Qwen3-8B",
+  "tokens": 16384,
+  "depths": [
+    0.0625,
+    0.1875,
+    0.3125,
+    0.4375,
+    0.5625,
+    0.6875,
+    0.8125,
+    0.9375
+  ],
+  "nll_full": {},
+  "nll_void": {},
+  "results": [
+    {
+      "policy": "Geodesia mix B=0.1 tpr=0.102 tv=2",
+      "bits_per_value": 2.060546875,
+      "read_bits_per_value": 2.060546875,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.10639189183712006,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 296.71875,
+      "read_MiB_per_query": 296.71875,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia mix B=0.5 tpr=0.098 tv=2",
+      "bits_per_value": 2.051357693142361,
+      "read_bits_per_value": 2.051357693142361,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.10602076351642609,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 295.3955078125,
+      "read_MiB_per_query": 295.3955078125,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia mix B=1 tpr=0.066 tv=2",
+      "bits_per_value": 2.0469733344184027,
+      "read_bits_per_value": 2.0469733344184027,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.10051809996366501,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 294.76416015625,
+      "read_MiB_per_query": 294.76416015625,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia mix B=1.5 tpr=0.035 tv=2",
+      "bits_per_value": 2.0514628092447915,
+      "read_bits_per_value": 2.0514628092447915,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.09993201494216919,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 295.41064453125,
+      "read_MiB_per_query": 295.41064453125,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    },
+    {
+      "policy": "Geodesia mix B=2 tpr=0.004 tv=2",
+      "bits_per_value": 2.0575459798177085,
+      "read_bits_per_value": 2.0575459798177085,
+      "R": [],
+      "MQ": null,
+      "MQ_far": null,
+      "KL_mem": 0.08217055350542068,
+      "L_eff": null,
+      "L_eff_frac": null,
+      "resident_MiB": 296.28662109375,
+      "read_MiB_per_query": 296.28662109375,
+      "MiB_per_1k_effective": null,
+      "cert_violations": 0
+    }
+  ]
+}
