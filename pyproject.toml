@@ -9,7 +9,7 @@ description = "Certified allocation KV cache compression: extremely long context
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Vincenzo Dentamaro", email = "vincenzodentamaro@gmail.com" }]
+authors = [{ name = "Vincenzo Dentamaro", email = "vincenzodentamaro@gmail.com" }, { name = "Pancrazio Auteri" }]
 keywords = ["kv-cache", "llm", "inference", "quantization", "long-context"]
 classifiers = [
     "Intended Audience :: Science/Research",
