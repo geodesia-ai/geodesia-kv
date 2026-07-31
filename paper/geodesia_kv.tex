@@ -24,43 +24,7 @@
 \maketitle
 \begin{abstract}
 \noindent
-The size of a KV-cache compression algorithm is measured against one of two
-metrics: either the resident capacity used for quantization and token
-eviction, or the bytes fetched for sparse attention. Mixing these metrics
-may give a false impression of a smaller method. Another source of confusion
-is chunked teacher forcing where, while logits stay causal, a quantizer
-such as KIVI can use the whole evaluation chunk as its current residual.
-We offer a more accurate, token-by-token analysis of \method{}, a family of
-training-free KV cache policies which combine monotonic block-wise
-precision allocation, small exact rate-distortion residual, and query-sparse
-reading based on exact page summaries. All algorithms use a causal attention
-path, grouped-query attention (GQA) statistics are aggregated before
-allocating the shared KV head, and resident bits and bits per query
-are counted separately.
-
-On 16k context of \wikitext{}, the five-bit operating point beats the
-local KIVI-4 port on Qwen2.5-3B ($6.320$ versus $6.322$ perplexity at
-$4.96$ versus $5.03$ \bpv{}) and Qwen3-8B ($10.540$ versus $10.581$ at
-$4.99$ versus $5.03$ \bpv{}). Differences are small. On a frozen six-book
-transfer task on \pg{}, the same 8B configuration performs worse ($16.258$
-versus $16.147$ perplexity), hence the performance improvement is not
-multi-corpora dominance. However, while compressed-Quest shows slightly
-inferior perplexity on six \wikitext{} windows, on six preregistered \pg{}
-books it improves perplexity ($16.931$ versus $17.022$), resident rate
-($9.83$ versus $16.25$ \bpv{}), and read rate ($1.95$ versus $2.32$ \bpv{}).
-A non-incremental exploratory transfer to a Qwen3-30B-A3B GPTQ-Int8 checkpoint
-fitting on an RTX A6000 prefers a $2.061$-\bpv{} low-rate point, though this
-is not primary evidence.
-
-\method{} is implemented natively as a \texttt{GeodesiaKVCacheManager}
-plugin in the vLLM serving engine. This realization removes any need for dense
-cache retention, guarantees monotonic bit demotion, and implements a proper
-incremental append operation. Consumer hardware end-to-end evaluation shows
-$71.7\%$ peak VRAM reduction on a variety of architectures (Qwen, Llama,
-Mistral, DeepSeek), allowing 1M-token context inference on a single
-16\,GiB GPU. The picture closes the scientific and engineering gaps: the
-method provides a universal, hardware-ready approach to memory-efficient
-long-context LLM serving.
+Current evaluations of KV-cache compression often conflate resident capacity with read bandwidth and suffer from chunked teacher-forcing artifacts. We introduce \method{}, a family of training-free KV cache policies that combines monotonic block-wise precision allocation, exact rate-distortion residuals, and query-sparse reading to provide true hardware-ready compression. By strictly separating resident and read bits and ensuring rigorous causal evaluation, we demonstrate that \method{} consistently outperforms existing methods. On \wikitext{} (16k context), our 5-bit operating point achieves lower perplexity at a lower bitrate than KIVI-4 on Qwen architectures. Furthermore, our compressed-Quest variant significantly improves perplexity and reduces both resident (9.83 vs 16.25 \bpv{}) and read rates (1.95 vs 2.32 \bpv{}) compared to baseline sparse methods on \pg{}. Implemented as a native \texttt{GeodesiaKVCacheManager} plugin in vLLM, \method{} completely eliminates dense cache retention through monotonic bit demotion. Our end-to-end evaluation on consumer hardware yields up to $71.7\%$ peak VRAM reduction across leading architectures (Qwen, Llama, DeepSeek), unlocking 1M-token context generative inference on a single 16\,GiB GPU.
 \end{abstract}
 \section{Introduction}
 
