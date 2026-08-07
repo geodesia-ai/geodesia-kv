@@ -9,7 +9,7 @@
 
 > **Official Implementation of the Paper:**  
 > *"Squeezing the Cache, Preserving the Truth: Monotonic Equipotential Allocation with Geodesia-KV"*  
-> *Vincenzo Dentamaro, Pancrazio Auteri (Geodesia.ai)*
+> *Vincenzo Dentamaro, Pancrazio Auteri, Giuseppe Pirlo (Geodesia.ai)*
 
 ---
 
@@ -298,7 +298,7 @@ If you use Geodesia-KV in your research or project, please cite our paper:
 ```bibtex
 @article{dentamaro2026geodesiakv,
   title={Squeezing the Cache, Preserving the Truth: Monotonic Equipotential Allocation with Geodesia-KV},
-  author={Dentamaro, Vincenzo and Auteri, Pancrazio},
+  author={Dentamaro, Vincenzo, Auteri, Pancrazio and Giuseppe Pirlo},
   journal={arXiv preprint},
   year={2026}
 }
