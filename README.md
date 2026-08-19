@@ -6,6 +6,7 @@
 [![vLLM 0.26+](https://img.shields.io/badge/vLLM-0.26+-00A3E0.svg)](https://vllm.ai/)
 [![CUDA Toolkit](https://img.shields.io/badge/CUDA-12.0+-76B900.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Paper PDF](https://img.shields.io/badge/Paper-PDF-red.svg)](paper/geodesia_kv.pdf)
+[![vLLM Guide](https://img.shields.io/badge/vLLM-Setup_Guide-00A3E0.svg)](vLLM.md)
 
 > **Official Implementation of the Paper:**  
 > *"Squeezing the Cache, Preserving the Truth: Monotonic Equipotential Allocation with Geodesia-KV"*  
@@ -49,7 +50,7 @@ Incoming KV Tensors (64-token Blocks)
 
 - 🎯 **No Token Eviction, No Information Loss**: Retains 100% of context tokens. Cold blocks are compressed down to 2-bit or centroid precision rather than discarded.
 - 📉 **Monotonic Demotion**: Blocks smoothly demote across `{16, 8, 4, 2, 1}` bit levels and **never promote**, eliminating the need to keep a dense FP16 fallback copy in VRAM.
-- ⚡ **Native vLLM 0.26 Integration**: Out-of-the-box `GeodesiaKVCacheManager` plugin for high-throughput serving with **>71.7% peak VRAM reduction**.
+- ⚡ **Native vLLM 0.26 Integration**: Out-of-the-box `GeodesiaKVCacheManager` plugin for high-throughput serving with **>71.7% peak VRAM reduction**. See our [vLLM Deployment Guide](vLLM.md).
 - 🚀 **Custom Fused CUDA Kernel**: Fast `mixed_attn_decode` kernel that dequantizes the heterogeneous bit-ladder on-the-fly inside online softmax attention.
 - 🛡️ **Runtime Error Certificate**: Rigorous, real-time mathematical bound on output attention error ($\|o - \hat{o}\|$) with **zero certificate violations**.
 - 🤗 **HuggingFace Transformers Ready**: Native monkey-patching via `ALL_ATTENTION_FUNCTIONS` for 1-line integration with HF models.
@@ -88,6 +89,8 @@ pip install ninja
 ## 💻 Code Examples
 
 ### 1. Production Usage with vLLM (`0.26.0`)
+
+> 📖 **Full Guide**: For a dedicated step-by-step tutorial from installation to serving, see the **[vLLM Deployment Guide (vLLM.md)](vLLM.md)**.
 
 Deploy long-context models in production with high throughput and up to **71.7% lower peak VRAM**:
 
